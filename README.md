@@ -1,6 +1,6 @@
-// Save this file as server.js and run: `node server.js`
-// Then open: http://localhost:8080/?room=test
-// Share the same URL with a friend on another device to play together.
+// One-file, working online build. Save as server.js. Run: `npm i express ws && node server.js`
+// Open: http://localhost:8080/?room=test
+// Share that URL with another device to play together. Both start with 100 gold.
 
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -10,6 +10,75 @@ const PORT = process.env.PORT || 8080;
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+
+// In-memory rooms
+const rooms = new Map();
+const nowMs = () => Date.now();
+
+function getOrCreateRoom(roomId){
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, {
+      clients: new Map(), // clientId -> ws
+      S: {
+        roomId,
+        status: 'waiting',      // 'waiting' | 'build' | 'wave' | 'finished'
+        waveNumber: 0,
+        seq: 0,
+        actions: [],            // authoritative action log
+        epochStart: null,       // ms timestamp
+        buildDuration: 60,
+        waveAutoDuration: 60,
+        soloSince: null,
+        players: {
+          P1: { id: null, name: null, ready: false, skip: false },
+          P2: { id: null, name: null, ready: false, skip: false }
+        }
+      }
+    });
+  }
+  return rooms.get(roomId);
+}
+
+function chooseRole(S){
+  if (!S.players.P1.id) return 'P1';
+  if (!S.players.P2.id) return 'P2';
+  return null;
+}
+function countOccupied(S){
+  return (S.players.P1.id?1:0) + (S.players.P2.id?1:0);
+}
+function bothReady(S){
+  return !!(S.players.P1.id && S.players.P2.id && S.players.P1.ready && S.players.P2.ready);
+}
+function startBuildPhase(room){
+  const S = room.S;
+  S.status = 'build';
+  S.waveNumber = 0;
+  S.seq = 0;
+  S.actions = [];
+  S.epochStart = nowMs();
+  S.players.P1.skip = false;
+  S.players.P2.skip = false;
+}
+function endWaveAndAdvance(room){
+  const S = room.S;
+  S.waveNumber += 1;
+  S.status = 'wave';
+  S.players.P1.skip = false;
+  S.players.P2.skip = false;
+  broadcast(room, { type:'state', S });
+}
+function finishMatch(room, winnerP){
+  const S = room.S;
+  S.status = 'finished';
+  broadcast(room, { type:'state', S, winnerP });
+}
+function broadcast(room, msg){
+  const data = JSON.stringify(msg);
+  for (const ws of room.clients.values()){
+    try { ws.send(data); } catch {}
+  }
+}
 
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -99,10 +168,12 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 <script>
 (() => {
+  // URL params
   const params = new URLSearchParams(location.search);
   const ROOM = params.get('room') || 'default';
   const NAME = params.get('name') || \`Player\${Math.floor(Math.random()*1000)}\`;
 
+  // DOM
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const waveHeader = document.getElementById('waveHeader');
@@ -121,8 +192,10 @@ button:disabled { opacity: 0.5; cursor: default; }
     roomInfo: document.getElementById('roomInfo')
   };
 
+  // World constants
   const WORLD = { w:1200, h:700, laneY:350, half:600 };
 
+  // Server-shared state snapshot
   let S = {
     roomId: ROOM,
     status: 'waiting',
@@ -136,18 +209,21 @@ button:disabled { opacity: 0.5; cursor: default; }
     players: { P1:{ id:null, name:null, ready:false, skip:false }, P2:{ id:null, name:null, ready:false, skip:false } }
   };
 
+  // Client identity
   let MY = { id: null, role: null };
 
+  // Local deterministic state
   const L = {
     time: 0,
     over: false, winner: null,
     bases: { 1:{ x:80, y:350, hp:100 }, 2:{ x:1120, y:350, hp:100 } },
-    gold: { 1:100, 2:100 },
+    gold: { 1:100, 2:100 }, // start with 100
     selected: { 1:'basic', 2:'basic' },
     selling: { 1:false, 2:false },
     towers: [], creeps: [], bullets: [],
     seenSeq: 0,
     lastSend: { 1:{}, 2:{} },
+    // waves
     curWave: 0,
     waveStartSimT: null,
     waveSchedule: [],
@@ -155,6 +231,7 @@ button:disabled { opacity: 0.5; cursor: default; }
     nextWaveSkipAllowedAt: null
   };
 
+  // Defs
   const CreepDefs = {
     normal: { hp: 30, speed: 60, bounty: 6, color: '#a3ff9b', r:12, cost: 8, cd: 1.0, unlockWave: 1 },
     fast:   { hp: 20, speed: 100, bounty: 7, color: '#9bd6ff', r:11, cost: 10, cd: 1.2, unlockWave: 3 },
@@ -165,18 +242,18 @@ button:disabled { opacity: 0.5; cursor: default; }
     sniper: { cost: 35, dmg: 18, fireRate: 1.0, range: 220, color: '#9a6eff' }
   };
 
-  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
-  function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+  // Utils
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   function randN(n){ let x=(n>>>0)^0x9e3779b9; x=(x^(x>>>16))>>>0; x=Math.imul(x,2246822519)>>>0; x=(x^(x>>>13))>>>0; x=Math.imul(x,3266489917)>>>0; x=(x^(x>>>16))>>>0; return (x>>>0)/4294967296; }
 
+  // UI helpers
   function occupied(role){ return !!(S.players && S.players[role] && S.players[role].id); }
   function skipCount(){ return (S.players.P1.skip?1:0)+(S.players.P2.skip?1:0); }
-
   function updateSellLabels(){
     ui.sell1.textContent = \`Sell Mode: \${L.selling[1] ? 'On' : 'Off'}\`;
     ui.sell2.textContent = \`Sell Mode: \${L.selling[2] ? 'On' : 'Off'}\`;
   }
-
   function lockSideControls() {
     const canAct = (S.status==='build' || S.status==='wave') && !L.over && occupied('P1') && occupied('P2');
     const myP = MY.role === 'P1' ? 1 : (MY.role === 'P2' ? 2 : null);
@@ -193,24 +270,15 @@ button:disabled { opacity: 0.5; cursor: default; }
 
     updateSendLocks();
   }
-
-  function nowSimTime(){
-    if (!S.epochStart) return 0;
-    return Math.max(0, (Date.now() - S.epochStart)/1000);
-  }
-
-  function wsSend(obj){
-    if (socket && socket.readyState === 1) {
-      socket.send(JSON.stringify(obj));
-    }
-  }
-
+  function nowSimTime(){ return S.epochStart ? Math.max(0, (Date.now() - S.epochStart)/1000) : 0; }
+  function wsSend(obj){ if (socket && socket.readyState === 1) socket.send(JSON.stringify(obj)); }
   function pushAction(a){
     if (!S.epochStart) return;
     a.clientId = MY.id;
     wsSend({ type:'action', clientId: MY.id, action: a });
   }
 
+  // Wave schedule
   function buildWaveSchedule(waveNum){
     const total = 8 + (waveNum-1)*4;
     const gap = Math.max(0.25, 1.0 - waveNum*0.05);
@@ -226,7 +294,6 @@ button:disabled { opacity: 0.5; cursor: default; }
     }
     return schedule;
   }
-
   function spawnCreep(p, type, detIndex){
     const def = CreepDefs[type]; if (!def) return;
     const baseX = p===1 ? 80 : 1120;
@@ -237,7 +304,6 @@ button:disabled { opacity: 0.5; cursor: default; }
       dir, type, hp:def.hp, maxHp:def.hp, speed:def.speed, bounty:def.bounty, color:def.color, r:12
     });
   }
-
   function nearestOwnTowerIndex(p, x, y, rad){
     let best=-1, bd=rad;
     for (let i=0;i<L.towers.length;i++){
@@ -247,20 +313,16 @@ button:disabled { opacity: 0.5; cursor: default; }
     }
     return best;
   }
-
   window.canSkipWave = function canSkipWave(){
     if (S.status!=='wave') return false;
     return L.waveSpawnsDone && L.nextWaveSkipAllowedAt != null && L.time >= L.nextWaveSkipAllowedAt;
   };
 
+  // Actions application (deterministic)
   function applyPendingActions(){
     for (const a of S.actions || []){
       if (a.seq <= L.seenSeq) continue;
       if (a.t > L.time + 1e-6) continue;
-
-      let role = null;
-      if (a.p === 1) role = 'P1';
-      else if (a.p === 2) role = 'P2';
 
       switch(a.type){
         case 'select': {
@@ -322,6 +384,7 @@ button:disabled { opacity: 0.5; cursor: default; }
     }
   }
 
+  // Wave control (client-local)
   function beginWave(n){
     if (S.status==='finished') return;
     S.waveNumber = n;
@@ -334,11 +397,7 @@ button:disabled { opacity: 0.5; cursor: default; }
     L.lastSend[1] = {}; L.lastSend[2] = {};
     renderMM();
   }
-
-  function endWaveAndAdvance(){
-    // Request server to advance wave; server will broadcast new state
-    wsSend({ type:'advance', clientId: MY.id });
-  }
+  function endWaveAndAdvance(){ wsSend({ type:'advance', clientId: MY.id }); }
 
   function emitScheduledSpawns(){
     if (S.status !== 'wave' || L.waveStartSimT == null) return;
@@ -361,18 +420,15 @@ button:disabled { opacity: 0.5; cursor: default; }
     const seats = (occupied('P1')?1:0) + (occupied('P2')?1:0);
     if (!inRound) { banner.innerHTML = ''; return; }
     if (seats === 1) {
-      const remain = Math.max(0, 10 - (Date.now() - (S.soloSince||Date.now()))/1000);
-      banner.innerHTML = \`<span class="warn">Opponent disconnected. Awarding win soon if they don’t return…</span>\`;
+      banner.innerHTML = \`<span class="warn">Opponent disconnected. Waiting to award win…</span>\`;
     } else {
       banner.innerHTML = '';
     }
   }
-
   function finishMatch(winnerP){
     L.over = true; L.winner = winnerP;
     renderMM();
   }
-
   function waveAutoAdvanceCheck(){
     if (S.status!=='wave' || L.waveStartSimT==null) return;
     const elapsed = L.time - L.waveStartSimT;
@@ -380,19 +436,14 @@ button:disabled { opacity: 0.5; cursor: default; }
     const divisor = sc >= 1 ? 2 : 1;
     const autoDur = (S.waveAutoDuration || 60) / divisor;
     const canSkipNow = window.canSkipWave();
-
-    if (elapsed >= autoDur) {
-      endWaveAndAdvance();
-      return;
-    }
-    if (canSkipNow && sc === 2) {
-      endWaveAndAdvance();
-    }
+    if (elapsed >= autoDur) { endWaveAndAdvance(); return; }
+    if (canSkipNow && sc === 2) { endWaveAndAdvance(); }
   }
 
   function updateSendLocks(){
     const w = S.waveNumber;
     const now = L.time;
+    // P1
     for (const k of ['normal','fast','slow']){
       const btn = ui.send1[k];
       const def = CreepDefs[k];
@@ -404,6 +455,7 @@ button:disabled { opacity: 0.5; cursor: default; }
                    cdRemain>0 ? \`Cooldown: \${cdRemain.toFixed(2)}s\` :
                    !enoughGold ? \`Need \${def.cost} gold\` : '');
     }
+    // P2
     for (const k of ['normal','fast','slow']){
       const btn = ui.send2[k];
       const def = CreepDefs[k];
@@ -417,6 +469,7 @@ button:disabled { opacity: 0.5; cursor: default; }
     }
   }
 
+  // Input
   document.querySelectorAll('.act-select').forEach(btn=>{
     btn.addEventListener('click',()=>{
       if ((S.status!=='build' && S.status!=='wave') || L.over) return;
@@ -435,21 +488,20 @@ button:disabled { opacity: 0.5; cursor: default; }
       pushAction({ type:'send', p, c });
     });
   });
-
   ui.sell1.onclick=()=>{ if ((S.status==='build' || S.status==='wave') && MY.role==='P1') pushAction({ type:'toggleSell', p:1 }); };
   ui.sell2.onclick=()=>{ if ((S.status==='build' || S.status==='wave') && MY.role==='P2') pushAction({ type:'toggleSell', p:2 }); };
-
   window.addEventListener('keydown',(e)=>{
     if (e.repeat) return;
     const canBuild = (S.status==='build' || S.status==='wave') && !L.over;
     switch(e.key){
+      // P1
       case '1': if (canBuild && MY.role==='P1') pushAction({ type:'select', p:1, t:'basic' }); break;
       case '2': if (canBuild && MY.role==='P1') pushAction({ type:'select', p:1, t:'sniper' }); break;
       case 'a': case 'A': if (canBuild && MY.role==='P1') pushAction({ type:'toggleSell', p:1 }); break;
       case 'q': case 'Q': if (S.status==='wave' && MY.role==='P1') pushAction({ type:'send', p:1, c:'normal' }); break;
       case 'w': case 'W': if (S.status==='wave' && MY.role==='P1') pushAction({ type:'send', p:1, c:'fast' }); break;
       case 'e': case 'E': if (S.status==='wave' && MY.role==='P1') pushAction({ type:'send', p:1, c:'slow' }); break;
-
+      // P2
       case '9': if (canBuild && MY.role==='P2') pushAction({ type:'select', p:2, t:'basic' }); break;
       case '0': if (canBuild && MY.role==='P2') pushAction({ type:'select', p:2, t:'sniper' }); break;
       case 'l': case 'L': if (canBuild && MY.role==='P2') pushAction({ type:'toggleSell', p:2 }); break;
@@ -458,7 +510,6 @@ button:disabled { opacity: 0.5; cursor: default; }
       case 'i': case 'I': if (S.status==='wave' && MY.role==='P2') pushAction({ type:'send', p:2, c:'slow' }); break;
     }
   });
-
   canvas.addEventListener('click', (e)=>{
     if ((S.status!=='build' && S.status!=='wave') || L.over) return;
     const rect = canvas.getBoundingClientRect();
@@ -466,14 +517,15 @@ button:disabled { opacity: 0.5; cursor: default; }
     const y = (e.clientY - rect.top)  * (WORLD.h/rect.height);
     const p = x < WORLD.half ? 1 : 2;
     if ((p===1 && MY.role!=='P1') || (p===2 && MY.role!=='P2')) return;
-
     if (L.selling[p]) { pushAction({ type:'sell', p, x, y }); return; }
     pushAction({ type:'place', p, x, y });
   });
 
+  // Sim
   function step(dt){
     if (L.over) return;
 
+    // towers
     for (const t of L.towers){
       t.cooldown = Math.max(0, t.cooldown - dt);
       if (t.cooldown>0) continue;
@@ -494,11 +546,11 @@ button:disabled { opacity: 0.5; cursor: default; }
       }
     }
 
+    // creeps
     for (let i=L.creeps.length-1;i>=0;i--){
       const c = L.creeps[i];
       c.x += c.dir * c.speed * dt;
       c.y += Math.sign(WORLD.laneY - c.y) * 20 * dt;
-
       const enemy = c.p===1? 2:1;
       const bx = enemy===1? 80 : 1120, by = 350;
       if (Math.hypot(c.x-bx, c.y-by) < 22){
@@ -512,6 +564,7 @@ button:disabled { opacity: 0.5; cursor: default; }
       if (c.hp<=0) L.creeps.splice(i,1);
     }
 
+    // bullets
     for (let i=L.bullets.length-1;i>=0;i--){
       const b = L.bullets[i];
       b.life -= dt;
@@ -525,6 +578,7 @@ button:disabled { opacity: 0.5; cursor: default; }
     }
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
+    // midline
     ctx.strokeStyle = '#2a2f4a';
     ctx.lineWidth = 2;
     ctx.setLineDash([10,10]);
@@ -532,11 +586,14 @@ button:disabled { opacity: 0.5; cursor: default; }
     ctx.moveTo(WORLD.half, 0); ctx.lineTo(WORLD.half, canvas.height); ctx.stroke();
     ctx.setLineDash([]);
 
+    // lane band
     ctx.fillStyle = '#111633';
     ctx.fillRect(0, WORLD.laneY-200, canvas.width, 400);
 
+    // bases
     drawBase(1); drawBase(2);
 
+    // towers
     for (const t of L.towers){
       ctx.fillStyle = t.p===1 ? '#2e86de' : '#f39c12';
       ctx.beginPath(); ctx.arc(t.x,t.y,14,0,Math.PI*2); ctx.fill();
@@ -546,15 +603,18 @@ button:disabled { opacity: 0.5; cursor: default; }
       ctx.beginPath(); ctx.arc(t.x,t.y,6,0,Math.PI*2); ctx.fill();
     }
 
+    // creeps
     for (const c of L.creeps){
       ctx.fillStyle = c.color;
       ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,Math.PI*2); ctx.fill();
+      // hp bar
       const w = 26, h = 4;
       ctx.fillStyle = '#00000080'; ctx.fillRect(c.x-w/2, c.y-c.r-10, w, h);
       ctx.fillStyle = '#6eff6e'; ctx.fillRect(c.x-w/2, c.y-c.r-10, w*(c.hp/c.maxHp), h);
       ctx.strokeStyle = '#00000040'; ctx.strokeRect(c.x-w/2, c.y-c.r-10, w, h);
     }
 
+    // bullets
     for (const b of L.bullets){
       ctx.strokeStyle = b.color; ctx.globalAlpha = Math.max(0, b.life/0.07);
       ctx.lineWidth = 2;
@@ -562,6 +622,7 @@ button:disabled { opacity: 0.5; cursor: default; }
       ctx.globalAlpha = 1;
     }
 
+    // overlay
     if (L.over){
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -574,6 +635,7 @@ button:disabled { opacity: 0.5; cursor: default; }
       ctx.fillText('Press Ready to restart', canvas.width/2, canvas.height/2 + 24);
     }
 
+    // HUD
     ui.g1.textContent = Math.floor(L.gold[1]);
     ui.g2.textContent = Math.floor(L.gold[2]);
     ui.h1.textContent = Math.floor(L.bases[1].hp);
@@ -599,11 +661,15 @@ button:disabled { opacity: 0.5; cursor: default; }
     lockSideControls();
   }
 
+  // Main loop
   function loop(){
+    // Solo indicator (server handles awarding)
     soloWinCheck();
 
+    // Spawns
     if (S.status==='wave') emitScheduledSpawns();
 
+    // Integrate to shared time
     const target = (S.epochStart ? nowSimTime() : L.time);
     const maxStep = 0.016;
     while (L.time + 1e-6 < target) {
@@ -613,8 +679,10 @@ button:disabled { opacity: 0.5; cursor: default; }
       if (S.status==='wave') emitScheduledSpawns();
     }
 
+    // Apply actions up to L.time
     applyPendingActions();
 
+    // Build phase: auto-start wave 1 when timer ends; halve remaining if 1 skip; instant if both
     if (S.status==='build') {
       const elapsed = L.time;
       const baseRemain = (S.buildDuration || 60) - elapsed;
@@ -625,29 +693,31 @@ button:disabled { opacity: 0.5; cursor: default; }
         const effRemain = (skipCount() >= 1) ? baseRemain/2 : baseRemain;
         if (effRemain <= 0 && S.waveNumber===0) beginWave(1);
       }
-    } else if (S.status==='wave') {
+    }
+
+    // Auto-advance waves and manual skip logic
+    if (S.status==='wave') {
       const sinceStart = L.time - (L.waveStartSimT||L.time);
       const sc = skipCount();
       const divisor = sc >= 1 ? 2 : 1;
       const autoDur = (S.waveAutoDuration || 60) / divisor;
       statusHeader.textContent = \` | Wave time: \${Math.max(0, Math.ceil(autoDur - sinceStart))}s\`;
       waveAutoAdvanceCheck();
-    } else {
-      statusHeader.textContent = \` | \${S.status}\`;
     }
 
     waveHeader.textContent = \`Wave: \${S.waveNumber}\`;
     updateSendLocks();
-    ui.skipBtn.disabled = !window.canSkipWave();
 
     draw();
     requestAnimationFrame(loop);
   }
-
   requestAnimationFrame(loop);
+
+  // Initial UI
   updateSellLabels();
   renderMM();
 
+  // Ready/Skip
   ui.readyBtn.onclick = () => {
     if (!MY.role) return;
     const val = !S.players[MY.role].ready;
@@ -659,19 +729,20 @@ button:disabled { opacity: 0.5; cursor: default; }
     wsSend({ type:'skip', clientId: MY.id, value: val });
   };
 
+  // WebSocket
   let socket;
   function connectWS(){
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const url = \`\${proto}://\${location.host}/ws?room=\${encodeURIComponent(ROOM)}&name=\${encodeURIComponent(NAME)}\`;
     socket = new WebSocket(url);
 
-    socket.onopen = () => {};
     socket.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.type === 'hello') {
         MY.id = msg.clientId;
         MY.role = msg.role;
-        S = msg.S;
+        S = msg.S || S;
+        // Reset local sim on room join
         L.time = 0;
         L.over = false; L.winner = null;
         L.towers = []; L.creeps = []; L.bullets = [];
@@ -679,28 +750,22 @@ button:disabled { opacity: 0.5; cursor: default; }
         L.seenSeq = 0;
         renderMM();
       } else if (msg.type === 'state') {
-        const wasWave = S.status === 'wave';
+        const prevStatus = S.status;
         const prevWave = S.waveNumber;
-        S = msg.S;
-        if (!wasWave && S.status === 'wave') {
+        S = msg.S || S;
+        // Start wave locally when server goes to wave or wave number changes
+        if ((prevStatus !== 'wave' && S.status === 'wave') || (prevWave !== S.waveNumber)) {
           beginWave(S.waveNumber);
         }
-        if (wasWave && S.waveNumber !== prevWave) {
-          beginWave(S.waveNumber);
-        }
-        if (msg.winnerP) {
-          finishMatch(msg.winnerP);
-        }
+        if (msg.winnerP) finishMatch(msg.winnerP);
         renderMM();
       } else if (msg.type === 'action') {
-        // Optional: we could push only new actions; but we re-read S.actions each frame
-        // Here we just bump, client reads from S.actions after state updates.
+        // CRITICAL FIX: append incoming authoritative action to our S.actions
+        if (!Array.isArray(S.actions)) S.actions = [];
+        S.actions.push(msg.action);
       }
     };
-    socket.onclose = () => {
-      setTimeout(connectWS, 1000);
-    };
-    socket.onerror = () => {};
+    socket.onclose = () => setTimeout(connectWS, 1000);
   }
   connectWS();
 })();
@@ -714,96 +779,23 @@ app.get('/', (req, res) => {
 });
 
 app.get('/ws', (req, res) => {
-  res.statusCode = 426; // Upgrade Required (WebSocket)
-  res.end('Use WebSocket protocol.');
+  res.statusCode = 426; // Upgrade Required
+  res.end('WebSocket endpoint');
 });
 
-// In-memory rooms
-const rooms = new Map();
-function nowMs(){ return Date.now(); }
-
-function getOrCreateRoom(roomId){
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, {
-      clients: new Map(), // clientId -> ws
-      S: {
-        roomId,
-        status: 'waiting',
-        waveNumber: 0,
-        seq: 0,
-        actions: [],
-        epochStart: null,
-        buildDuration: 60,
-        waveAutoDuration: 60,
-        soloSince: null,
-        players: {
-          P1: { id: null, name: null, ready: false, skip: false },
-          P2: { id: null, name: null, ready: false, skip: false }
-        }
-      }
-    });
-  }
-  return rooms.get(roomId);
-}
-
-function broadcast(room, msg){
-  const data = JSON.stringify(msg);
-  for (const ws of room.clients.values()){
-    try { ws.send(data); } catch {}
-  }
-}
-
-function chooseRole(S){
-  if (!S.players.P1.id) return 'P1';
-  if (!S.players.P2.id) return 'P2';
-  return null;
-}
-
-function countOccupied(S){
-  return (S.players.P1.id?1:0) + (S.players.P2.id?1:0);
-}
-
-function finishMatch(room, winnerP){
-  const S = room.S;
-  S.status = 'finished';
-  broadcast(room, { type:'state', S, winnerP });
-}
-
-function bothReady(S){
-  return !!(S.players.P1.id && S.players.P2.id && S.players.P1.ready && S.players.P2.ready);
-}
-
-function startBuildPhase(room){
-  const S = room.S;
-  S.status = 'build';
-  S.waveNumber = 0;
-  S.seq = 0;
-  S.actions = [];
-  S.epochStart = nowMs();
-  S.players.P1.skip = false;
-  S.players.P2.skip = false;
-}
-
-function endWaveAndAdvance(room){
-  const S = room.S;
-  S.waveNumber += 1;
-  S.status = 'wave';
-  S.players.P1.skip = false;
-  S.players.P2.skip = false;
-  broadcast(room, { type:'state', S });
-}
-
+// WebSocket handling
 wss.on('connection', (ws, req) => {
   try {
-    const url = new URL(req.url, \`http://\${req.headers.host}\`);
+    const url = new URL(req.url, `http://${req.headers.host}`);
     const roomId = url.searchParams.get('room') || 'default';
-    const name = url.searchParams.get('name') || \`Guest\${Math.floor(Math.random()*1000)}\`;
-    const clientId = \`\${Math.random().toString(36).slice(2)}-\${Date.now()}\`;
+    const name = url.searchParams.get('name') || `Guest${Math.floor(Math.random()*1000)}`;
+    const clientId = `${Math.random().toString(36).slice(2)}-${Date.now()}`;
 
     const room = getOrCreateRoom(roomId);
+    const S = room.S;
     room.clients.set(clientId, ws);
 
-    const S = room.S;
+    // Seat assignment
     const role = chooseRole(S);
     if (role) {
       S.players[role].id = clientId;
@@ -812,15 +804,17 @@ wss.on('connection', (ws, req) => {
       S.players[role].skip = false;
     }
 
+    // Hello snapshot
     ws.send(JSON.stringify({ type:'hello', clientId, role: role || null, S }));
 
+    // Notify others
     broadcast(room, { type:'state', S });
 
     ws.on('message', (raw) => {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
-      const S = room.S;
 
+      const S = room.S;
       const myRole = (S.players.P1.id === msg.clientId) ? 'P1' :
                      (S.players.P2.id === msg.clientId) ? 'P2' : null;
 
@@ -843,26 +837,26 @@ wss.on('connection', (ws, req) => {
         case 'action': {
           if (!myRole) return;
           const a = msg.action || {};
+          // Side-guard
           if (typeof a.p === 'number') {
             if ((a.p === 1 && myRole !== 'P1') || (a.p === 2 && myRole !== 'P2')) return;
           }
-          if (!S.epochStart) return;
+          if (!S.epochStart) return; // Not started yet
           S.seq += 1;
           a.seq = S.seq;
           a.from = msg.clientId;
           a.t = (nowMs() - S.epochStart)/1000;
           S.actions.push(a);
+          // Broadcast minimal action update (clients append)
           broadcast(room, { type:'action', action:a, Sseq:S.seq });
         } break;
 
         case 'advance': {
           endWaveAndAdvance(room);
         } break;
-
-        default: break;
       }
 
-      // Solo win check on server
+      // Server-side solo-win check
       const inRound = (S.status==='build' || S.status==='wave');
       const seats = countOccupied(S);
       if (!inRound) { S.soloSince = null; }
@@ -879,21 +873,26 @@ wss.on('connection', (ws, req) => {
     });
 
     ws.on('close', () => {
+      const S = room.S;
       room.clients.delete(clientId);
       if (S.players.P1.id === clientId) {
         S.players.P1 = { id: null, name: null, ready: false, skip: false };
       } else if (S.players.P2.id === clientId) {
         S.players.P2 = { id: null, name: null, ready: false, skip: false };
       }
+
+      // Cleanup empty rooms
       if (room.clients.size === 0 && !S.players.P1.id && !S.players.P2.id) {
         rooms.delete(roomId);
         return;
       }
       broadcast(room, { type:'state', S });
     });
-  } catch {}
+  } catch (e) {
+    // ignore
+  }
 });
 
 server.listen(PORT, () => {
-  console.log(\`Server on http://localhost:\${PORT}\`);
+  console.log(\`Server running at http://localhost:\${PORT}\`);
 });
