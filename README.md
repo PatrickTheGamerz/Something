@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Orange TD — v1.26 (dual-synced, waves, matchmaking)</title>
+<title>Orange TD — v1.27 (dual-synced, waves, matchmaking)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <style>
   :root {
@@ -50,19 +50,19 @@
   <span id="status" class="pill">Status: <strong id="statusText">waiting</strong></span>
   <span class="pill">P1: <strong id="p1Name">—</strong> <span class="muted" id="p1Tag"></span></span>
   <span class="pill">P2: <strong id="p2Name">—</strong> <span class="muted" id="p2Tag"></span></span>
-  <span class="pill">Version: <strong>1.26</strong></span>
+  <span class="pill">Version: <strong>1.27</strong></span>
   <div id="banner"></div>
 </div>
 
 <header>
   <div class="stats">
     <strong class="p1">Player 1</strong>
-    <span class="badge">Gold: <span id="g1">0</span></span>
+    <span class="badge">Gold: <span id="g1">100</span></span>
     <span class="badge">Base: <span id="h1">100</span> HP</span>
   </div>
   <div><strong id="waveHeader">Wave: 0</strong></div>
   <div class="stats" style="justify-content:flex-end;">
-    <span class="badge">Gold: <span id="g2">0</span></span>
+    <span class="badge">Gold: <span id="g2">100</span></span>
     <span class="badge">Base: <span id="h2">100</span> HP</span>
     <strong class="p2">Player 2</strong>
   </div>
@@ -84,7 +84,7 @@
     <button class="btn" id="sell1">Sell Mode: Off</button>
   </div>
 
-  <canvas id="game" width="1200" height="700"></canvas>
+  <canvas id="game" width="1200" height="860"></canvas>
 
   <div class="panel right">
     <h3>Build (P2)</h3>
@@ -108,7 +108,8 @@
 
 <script>
 /* ================= Shared store (localStorage) ================= */
-const KEY = 'orange_td_v126';
+const KEY = 'orange_td_v127'; // bumped version for safe localStorage separation
+const TICK = 0.016; // ~60 Hz quantization for tighter sync
 
 // Per-tab identity
 const MY = {
@@ -195,7 +196,9 @@ function pushAction(a){
   s.seq = (s.seq||0) + 1;
   a.seq = s.seq;
   a.from = MY.id;
-  a.t = nowSimTime();
+  // Quantize action time to shared tick to improve cross-tab sync
+  let t = nowSimTime();
+  a.t = Math.round(t / TICK) * TICK;
   s.actions.push(a);
   save(s);
   S = s;
@@ -349,14 +352,15 @@ window.addEventListener('beforeunload', () => {
     send2: { normal: document.getElementById('send2-normal'), fast: document.getElementById('send2-fast'), slow: document.getElementById('send2-slow') }
   };
 
-  const WORLD = { w:1200, h:700, laneY:350, half:600 };
+  // Stretched map: taller playfield
+  const WORLD = { w:1200, h:860, laneY:430, half:600 };
 
   // Local deterministic world state
   const L = {
     time: 0,
     over: false, winner: null,
-    bases: { 1:{ x:80, y:350, hp:100 }, 2:{ x:1120, y:350, hp:100 } },
-    gold: { 1:0, 2:0 }, // gold only from kills
+    bases: { 1:{ x:80, y:WORLD.laneY, hp:100 }, 2:{ x:1120, y:WORLD.laneY, hp:100 } },
+    gold: { 1:100, 2:100 }, // Start with 100 gold (changed)
     selected: { 1:'basic', 2:'basic' },
     selling: { 1:false, 2:false },
     towers: [], creeps: [], bullets: [],
@@ -409,7 +413,9 @@ window.addEventListener('beforeunload', () => {
     s.seq = (s.seq || 0) + 1;
     a.seq = s.seq;
     a.from = MY.id;
-    a.t = nowSimTime();
+    // Quantize to ticks for better cross-tab sync
+    let t = nowSimTime();
+    a.t = Math.round(t / TICK) * TICK;
     s.actions.push(a);
     save(s);
     S = s;
@@ -434,7 +440,7 @@ window.addEventListener('beforeunload', () => {
 
   function spawnCreep(p, type, detIndex){
     const def = CreepDefs[type]; if (!def) return;
-    const baseX = p===1 ? 80 : 1120;
+    const baseX = p===1 ? L.bases[1].x : L.bases[2].x;
     const dir = (p===1)? 1 : -1;
     const y = WORLD.laneY + ( (randN(123456 + detIndex) * 120) - 60 );
     L.creeps.push({
@@ -504,7 +510,7 @@ window.addEventListener('beforeunload', () => {
           const type = L.selected[a.p];
           const def = TowerDefs[type]; if (!def) break;
           const xClamped = clamp(a.x, a.p===1?40:WORLD.half+40, a.p===1?WORLD.half-40:WORLD.w-40);
-          const yClamped = clamp(a.y, WORLD.laneY-180, WORLD.laneY+180);
+          const yClamped = clamp(a.y, WORLD.laneY-220, WORLD.laneY+220); // a bit taller build band
           let ok = true;
           for (const t of L.towers) { if (t.p===a.p && dist({x:xClamped,y:yClamped}, t) < 30) { ok=false; break; } }
           if (!ok) break;
@@ -738,7 +744,8 @@ window.addEventListener('beforeunload', () => {
       c.y += Math.sign(WORLD.laneY - c.y) * 20 * dt;
 
       const enemy = c.p===1? 2:1;
-      const bx = enemy===1? 80 : 1120, by = 350;
+      const bx = enemy===1? L.bases[1].x : L.bases[2].x;
+      const by = WORLD.laneY;
       if (Math.hypot(c.x-bx, c.y-by) < 22){
         L.bases[enemy].hp = clamp(L.bases[enemy].hp - 10, 0, 1000);
         L.creeps.splice(i,1);
@@ -773,9 +780,9 @@ window.addEventListener('beforeunload', () => {
     ctx.moveTo(WORLD.half, 0); ctx.lineTo(WORLD.half, canvas.height); ctx.stroke();
     ctx.setLineDash([]);
 
-    // lane band
+    // lane band (taller)
     ctx.fillStyle = '#111633';
-    ctx.fillRect(0, WORLD.laneY-200, canvas.width, 400);
+    ctx.fillRect(0, WORLD.laneY-240, canvas.width, 480);
 
     // bases
     drawBase(1); drawBase(2);
@@ -837,25 +844,27 @@ window.addEventListener('beforeunload', () => {
     ctx.beginPath(); ctx.arc(b.x,b.y,24,0,Math.PI*2); ctx.stroke();
   }
 
-  // Main loop with fixed timestep
+  // Main loop with fixed timestep target alignment
   function loop(){
     // Solo win detection
     soloWinCheck();
 
-    // Wave spawning
+    // Wave spawning (schedule)
     if (S.status==='wave') emitScheduledSpawns();
 
-    // Integrate to shared time
-    const target = (S.epochStart ? nowSimTime() : L.time);
-    const maxStep = 0.016;
-    while (L.time + 1e-6 < target) {
+    // Integrate to shared, quantized time to improve cross-tab sync
+    const rawTarget = (S.epochStart ? nowSimTime() : L.time);
+    const maxStep = TICK; // keep in sync with quantization
+    const target = Math.floor(rawTarget / maxStep) * maxStep;
+
+    while (L.time + 1e-9 < target) {
       const dt = Math.min(maxStep, target - L.time);
       step(dt);
       L.time += dt;
       if (S.status==='wave') emitScheduledSpawns();
     }
 
-    // Apply actions up to L.time
+    // Apply actions up to L.time (times were quantized at push)
     applyPendingActions();
 
     // Build phase: auto-start wave 1 when timer ends; halve remaining if 1 skip; instant if both
