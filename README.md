@@ -45,6 +45,8 @@
       display: grid;
       grid-template-rows: auto 1fr auto;
       padding: clamp(16px, 3vw, 24px);
+      max-width: 880px;
+      margin: 0 auto;
     }
 
     .topbar {
@@ -105,6 +107,13 @@
     }
     .status strong { color: var(--text); }
 
+    .content-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1.2fr 1fr;
+      align-items: start;
+    }
+
     .seat-row {
       display: grid;
       grid-template-columns: repeat(2, minmax(120px, 1fr));
@@ -114,9 +123,16 @@
     .seat.taken { background: #1a1f35; opacity: .7; }
     .seat.mine { outline: 2px solid var(--accent); }
 
-    .board {
+    .board-wrap {
       display: grid;
-      grid-template-columns: repeat(3, minmax(80px, 1fr));
+      place-items: center;
+    }
+    .board {
+      width: min(88vw, 520px);
+      max-width: 520px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
       gap: 12px;
       user-select: none;
     }
@@ -187,6 +203,11 @@
     .light body { background: linear-gradient(160deg, var(--bg-2), var(--bg)); }
     .light .panel { background: #ffffff; }
 
+    @media (max-width: 920px) {
+      .content-grid { grid-template-columns: 1fr; }
+      .board { width: min(92vw, 520px); }
+    }
+
     @media (max-width: 520px) {
       .meta { grid-template-columns: 1fr; }
     }
@@ -221,34 +242,40 @@
 
       <div id="status" class="status">Create or join a room to start</div>
 
-      <div class="seat-row">
-        <button id="takeXBtn" class="seat">Take X</button>
-        <button id="takeOBtn" class="seat">Take O</button>
-      </div>
+      <div class="content-grid">
+        <div>
+          <div class="seat-row">
+            <button id="takeXBtn" class="seat">Take X</button>
+            <button id="takeOBtn" class="seat">Take O</button>
+          </div>
 
-      <div id="board" class="board" aria-label="Tic Tac Toe board" role="grid">
-        <button class="cell" data-i="0" role="gridcell" aria-label="Cell 1"></button>
-        <button class="cell" data-i="1" role="gridcell" aria-label="Cell 2"></button>
-        <button class="cell" data-i="2" role="gridcell" aria-label="Cell 3"></button>
-        <button class="cell" data-i="3" role="gridcell" aria-label="Cell 4"></button>
-        <button class="cell" data-i="4" role="gridcell" aria-label="Cell 5"></button>
-        <button class="cell" data-i="5" role="gridcell" aria-label="Cell 6"></button>
-        <button class="cell" data-i="6" role="gridcell" aria-label="Cell 7"></button>
-        <button class="cell" data-i="7" role="gridcell" aria-label="Cell 8"></button>
-        <button class="cell" data-i="8" role="gridcell" aria-label="Cell 9"></button>
-      </div>
-
-      <div class="meta">
-        <div class="score">
-          <span>Score</span>
-          <div class="score-box">
-            <div>X: <strong id="scoreX">0</strong></div>
-            <div>O: <strong id="scoreO">0</strong></div>
+          <div class="board-wrap">
+            <div id="board" class="board" aria-label="Tic Tac Toe board" role="grid">
+              <button class="cell" data-i="0" role="gridcell" aria-label="Cell 1"></button>
+              <button class="cell" data-i="1" role="gridcell" aria-label="Cell 2"></button>
+              <button class="cell" data-i="2" role="gridcell" aria-label="Cell 3"></button>
+              <button class="cell" data-i="3" role="gridcell" aria-label="Cell 4"></button>
+              <button class="cell" data-i="4" role="gridcell" aria-label="Cell 5"></button>
+              <button class="cell" data-i="5" role="gridcell" aria-label="Cell 6"></button>
+              <button class="cell" data-i="6" role="gridcell" aria-label="Cell 7"></button>
+              <button class="cell" data-i="7" role="gridcell" aria-label="Cell 8"></button>
+              <button class="cell" data-i="8" role="gridcell" aria-label="Cell 9"></button>
+            </div>
           </div>
         </div>
-        <div class="presence">
-          <span>Players online</span>
-          <div id="presenceList" class="pills"></div>
+
+        <div class="meta">
+          <div class="score">
+            <span>Score</span>
+            <div class="score-box">
+              <div>X: <strong id="scoreX">0</strong></div>
+              <div>O: <strong id="scoreO">0</strong></div>
+            </div>
+          </div>
+          <div class="presence">
+            <span>Players online</span>
+            <div id="presenceList" class="pills"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -263,7 +290,9 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <script>
-    // ---------- 1) Firebase config (REPLACE placeholders with your Firebase project's values) ----------
+    // ---------- 1) Firebase config ----------
+    // REPLACE placeholders with your Firebase project's values for this to work online.
+    // Get them from: Firebase Console > Project settings > Your apps (Web)
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -282,7 +311,10 @@
     const clientId = (() => {
       const k = "ttt_client_id_v2";
       let id = localStorage.getItem(k);
-      if (!id) { id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2); localStorage.setItem(k, id); }
+      if (!id) {
+        id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2);
+        localStorage.setItem(k, id);
+      }
       return id;
     })();
     const now = () => Date.now();
@@ -390,7 +422,6 @@
       unsubPresence = () => {
         connRef.off();
         db.ref(`rooms/${room}/presence`).off();
-        // Leave trace cleanup to onDisconnect so spectators stay visible while connected
       };
     }
     function stopPresence() { unsubPresence && unsubPresence(); unsubPresence = null; }
@@ -455,6 +486,7 @@
       setRoomInURL(id);
       setControls(true);
       roomInfoEl.textContent = `Room: ${id} — share this link`;
+      copyBtn.disabled = false;
 
       const ref = db.ref(`rooms/${id}`);
 
@@ -474,7 +506,7 @@
         }
       });
 
-      ref.on("value", (snap) => {
+      ref.on("value", async (snap) => {
         const state = snap.val();
         if (!state) {
           setStatus("Room not found. Create a new room.");
@@ -485,20 +517,53 @@
 
         const mark = state.players?.X === clientId ? "X"
                    : state.players?.O === clientId ? "O" : null;
-        setYouAre(mark);
-        updateSeatButtons(state);
-        renderBoard(state.board, state.winnerLine);
-        renderStatus(state);
-        renderScore(state.score);
+
+        // Auto-assign a random seat if available and you don't have one yet
+        if (!mark) {
+          const freeSeats = [];
+          if (!state.players?.X) freeSeats.push("X");
+          if (!state.players?.O) freeSeats.push("O");
+          if (freeSeats.length) {
+            const randomSeat = freeSeats[Math.floor(Math.random() * freeSeats.length)];
+            await tryAutoSeat(id, randomSeat);
+          }
+        }
+
+        // Recompute mark after potential auto-seat
+        const latest = (await ref.get()).val();
+        const myNow = latest?.players?.X === clientId ? "X"
+                     : latest?.players?.O === clientId ? "O" : null;
+        setYouAre(myNow);
+
+        updateSeatButtons(latest || state);
+        renderBoard((latest || state).board, (latest || state).winnerLine);
+        renderStatus(latest || state);
+        renderScore((latest || state).score);
 
         copyBtn.disabled = false;
         resetBtn.disabled = false;
-        leaveBtn.disabled = !mark;
+        leaveBtn.disabled = !myNow;
 
         startPresence(id);
       });
 
       unsubRoom = () => ref.off();
+    }
+
+    async function tryAutoSeat(room, seat) {
+      const ref = db.ref(`rooms/${room}`);
+      await ref.transaction((state) => {
+        if (!state) return state;
+        if (!state.players) state.players = { X: "", O: "" };
+        // If already seated, leave as-is
+        if (state.players.X === clientId || state.players.O === clientId) return state;
+        // Seat only if still free at transaction time
+        if (!state.players[seat]) {
+          state.players[seat] = clientId;
+          state.updatedAt = firebase.database.ServerValue.TIMESTAMP;
+        }
+        return state;
+      });
     }
 
     // ---------- 13) Seats ----------
@@ -664,8 +729,23 @@
         o.stop(ctx.currentTime + 0.21);
       } catch {}
     }
+
+    // Persist theme
+    (function initTheme() {
+      const k = "ttt_theme";
+      const saved = localStorage.getItem(k);
+      if (saved === "light") document.documentElement.classList.add("light");
+      themeBtn.textContent = document.documentElement.classList.contains("light") ? "🌞" : "🌗";
+    })();
+
+    function toggleTheme() {
+      const k = "ttt_theme";
+      document.documentElement.classList.toggle("light");
+      const isLight = document.documentElement.classList.contains("light");
+      localStorage.setItem(k, isLight ? "light" : "dark");
+      themeBtn.textContent = isLight ? "🌞" : "🌗";
+    }
     function toggleSound() { soundsOn = !soundsOn; soundBtn.textContent = soundsOn ? "🔊" : "🔈"; }
-    function toggleTheme() { document.documentElement.classList.toggle("light"); }
 
     // ---------- 19) Cleanup ----------
     function cleanupRoom() { unsubRoom && unsubRoom(); unsubRoom = null; stopPresence(); }
@@ -693,7 +773,7 @@
       if (!roomId) return;
       const map = { "1":0,"2":1,"3":2, "4":3,"5":4,"6":5, "7":6,"8":7,"9":8 };
       if (map[e.key] != null) {
-        const cell = boardEl.querySelector(\`.cell[data-i="\${map[e.key]}"]\`);
+        const cell = boardEl.querySelector(`.cell[data-i="${map[e.key]}"]`);
         if (cell) cell.click();
       }
     });
