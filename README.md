@@ -391,7 +391,7 @@
           ctx.fillStyle = `rgba(140,160,255,${tw})`; ctx.fill();
           st.x += st.s*0.05; if (st.x > bg.width+5) st.x = -5;
         }
-      } else { // bubbles
+      } else {
         for (const b of animState.bubbles) {
           ctx.beginPath();
           const grd = ctx.createRadialGradient(b.x-b.r*0.4, b.y-b.r*0.4, b.r*0.2, b.x, b.y, b.r);
@@ -464,19 +464,13 @@
       let deleteTimer = null;
 
       const scheduleCheck = async () => {
-        const snap = await roomRef.get();
-        const state = snap.val();
-        if (!state) return;
         const presenceSnap = await presRef.get();
-        const presenceEmpty = !presenceSnap.exists() || Object.keys(presenceSnap.val() || {}).length === 0;
-        if (presenceEmpty) {
+        const empty = !presenceSnap.exists() || Object.keys(presenceSnap.val() || {}).length === 0;
+        if (empty) {
           if (!deleteTimer) {
-            // Grace period to avoid flapping (5s)
             deleteTimer = setTimeout(async () => {
-              const latest = (await roomRef.get()).val();
               const presLatest = (await presRef.get()).val();
-              const stillEmpty = !presLatest || Object.keys(presLatest).length === 0;
-              if (stillEmpty) {
+              if (!presLatest || Object.keys(presLatest).length === 0) {
                 await roomRef.remove();
               }
               deleteTimer = null;
@@ -490,30 +484,21 @@
 
       presRef.on("value", scheduleCheck);
       roomRef.on("value", (s) => { if (!s.exists()) stopLifecycleWatcher(); });
-      lifecycleUnsub = () => {
-        presRef.off();
-        roomRef.off();
-      };
+      lifecycleUnsub = () => { presRef.off(); roomRef.off(); };
     }
     function stopLifecycleWatcher() { lifecycleUnsub && lifecycleUnsub(); lifecycleUnsub = null; }
 
     // ---------- 12) Actions ----------
     async function onCreate() {
-      const id = await createUniqueRoomId();
-      const ref = db.ref(`rooms/${id}`);
-      const initial = {
-        board: Array(9).fill(""),
-        current: "X",
-        players: { X: "", O: "" },
-        status: "playing",
-        winnerLine: [-1, -1, -1],
-        score: { X: 0, O: 0 },
-        createdAt: now(),
-        updatedAt: now()
-      };
-      await ref.set(initial);
-      setRoomInURL(id);
-      joinRoom(id, { allowCreateIfMissing: false });
+      setStatus("Creating room…");
+      try {
+        const id = await createAndReserveRoom();
+        setRoomInURL(id);
+        joinRoom(id, { allowCreateIfMissing: false });
+      } catch (err) {
+        console.error(err);
+        setStatus("Failed to create room. Please try again.");
+      }
     }
 
     async function onJoinPrompt() {
@@ -829,26 +814,54 @@
     }
     window.addEventListener("beforeunload", () => { /* presence cleaned via onDisconnect */ });
 
-    // ---------- 21) URL & ID helpers ----------
+    // ---------- 21) ID helpers ----------
     function generateRoomId() {
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       let s = "";
       for (let i = 0; i < 6; i++) s += alphabet[(Math.random() * alphabet.length) | 0];
       return s;
     }
-    async function createUniqueRoomId(maxAttempts = 20) {
+
+    // Create a room using an atomic transaction so "Create" always creates a fresh room
+    async function createAndReserveRoom(maxAttempts = 25) {
       for (let i = 0; i < maxAttempts; i++) {
         const id = generateRoomId();
-        const exists = (await db.ref(`rooms/${id}`).get()).exists();
-        if (!exists) return id;
+        const ref = db.ref(`rooms/${id}`);
+        const initial = {
+          board: Array(9).fill(""),
+          current: "X",
+          players: { X: "", O: "" },
+          status: "playing",
+          winnerLine: [-1,-1,-1],
+          score: { X: 0, O: 0 },
+          createdAt: now(),
+          updatedAt: now()
+        };
+        // Only create if missing (transaction aborts if exists)
+        const res = await ref.transaction((curr) => {
+          if (curr) return; // returning undefined aborts commit
+          return initial;
+        });
+        if (res.committed) return id;
+        // else loop and try another id
       }
-      // Fallback with longer id if collisions happen absurdly
-      let id;
-      do {
-        id = generateRoomId() + generateRoomId();
-      } while ((await db.ref(`rooms/${id}`).get()).exists());
-      return id;
+      // Fallback: generate a longer id if collisions are absurdly frequent
+      while (true) {
+        const id = generateRoomId() + generateRoomId();
+        const res = await db.ref(`rooms/${id}`).transaction((curr) => curr ? undefined : {
+          board: Array(9).fill(""),
+          current: "X",
+          players: { X: "", O: "" },
+          status: "playing",
+          winnerLine: [-1,-1,-1],
+          score: { X: 0, O: 0 },
+          createdAt: now(),
+          updatedAt: now()
+        });
+        if (res.committed) return id;
+      }
     }
+
     function getRoomFromURL() {
       const url = new URL(window.location.href);
       return url.searchParams.get("room")?.toUpperCase() || null;
