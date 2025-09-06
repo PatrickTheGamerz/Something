@@ -45,7 +45,7 @@
       display: grid;
       grid-template-rows: auto 1fr auto;
       padding: clamp(16px, 3vw, 24px);
-      max-width: 920px;
+      max-width: 900px;
       margin: 0 auto;
     }
 
@@ -133,12 +133,12 @@
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
       width: 100%;
-      max-width: min(88vw, 360px);
+      max-width: min(88vw, 340px);
       margin: 0 auto;
     }
     .cell {
       aspect-ratio: 1 / 1;
-      font-size: clamp(28px, 8vw, 48px);
+      font-size: clamp(26px, 8vw, 44px);
       font-weight: 800;
       letter-spacing: 1px;
       color: var(--text);
@@ -205,7 +205,7 @@
 
     @media (max-width: 840px) {
       .layout { grid-template-columns: 1fr; }
-      .board { max-width: min(92vw, 360px); }
+      .board { max-width: min(92vw, 340px); }
     }
     @media (max-width: 520px) {
       .meta { grid-template-columns: 1fr; }
@@ -289,7 +289,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <script>
-    // ---------- 1) Firebase config (replace with your project's values) ----------
+    // ---------- 1) Firebase config (REPLACE placeholders with your project's values) ----------
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -339,6 +339,7 @@
     let myMark = null;
     let unsubRoom = null;
     let unsubPresence = null;
+    let lifecycleUnsub = null;
     let soundsOn = true;
 
     // ---------- 6) Constants ----------
@@ -356,7 +357,7 @@
     function resizeCanvas() {
       bg.width = window.innerWidth;
       bg.height = window.innerHeight;
-      initAnimation(); // reinit on resize for crispness
+      initAnimation();
     }
     window.addEventListener("resize", resizeCanvas);
 
@@ -364,90 +365,47 @@
       cancelAnimationFrame(rafId);
       const isLight = document.documentElement.classList.contains("light");
       if (isLight) {
-        // Light mode: soft pastel bubbles rising and drifting
-        animState = {
-          type: "bubbles",
-          bubbles: Array.from({ length: 30 }, () => makeBubble())
-        };
+        animState = { type: "bubbles", bubbles: Array.from({ length: 36 }, () => makeBubble()) };
       } else {
-        // Dark mode: starfield drift + twinkle
-        animState = {
-          type: "stars",
-          stars: Array.from({ length: 90 }, () => makeStar())
-        };
+        animState = { type: "stars", stars: Array.from({ length: 100 }, () => makeStar()) };
       }
       drawBg();
     }
 
     function makeStar() {
-      return {
-        x: Math.random() * bg.width,
-        y: Math.random() * bg.height,
-        r: Math.random() * 1.8 + 0.4,
-        s: Math.random() * 0.6 + 0.2,
-        p: Math.random() * Math.PI * 2
-      };
+      return { x: Math.random() * bg.width, y: Math.random() * bg.height, r: Math.random() * 1.6 + 0.4, s: Math.random() * 0.6 + 0.2, p: Math.random() * Math.PI * 2 };
     }
-
     function makeBubble() {
       const palette = [
-        "rgba(108,140,255,0.18)",
-        "rgba(154,123,255,0.16)",
-        "rgba(89,217,143,0.16)",
-        "rgba(255,184,108,0.14)",
-        "rgba(255,107,107,0.14)"
+        "rgba(108,140,255,0.18)","rgba(154,123,255,0.16)","rgba(89,217,143,0.16)","rgba(255,184,108,0.14)","rgba(255,107,107,0.14)"
       ];
-      return {
-        x: Math.random() * bg.width,
-        y: bg.height + Math.random() * 200,
-        r: Math.random() * 40 + 12,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: - (Math.random() * 0.6 + 0.2),
-        c: palette[(Math.random() * palette.length) | 0],
-        wob: Math.random() * Math.PI * 2
-      };
+      return { x: Math.random() * bg.width, y: bg.height + Math.random() * 200, r: Math.random() * 36 + 14, vx: (Math.random()-0.5)*0.3, vy: -(Math.random()*0.6+0.2), c: palette[(Math.random()*palette.length)|0], wob: Math.random()*Math.PI*2 };
     }
-
     function drawBg() {
-      ctx.clearRect(0, 0, bg.width, bg.height);
+      ctx.clearRect(0,0,bg.width,bg.height);
       if (!animState) { rafId = requestAnimationFrame(drawBg); return; }
-
       if (animState.type === "stars") {
         for (const st of animState.stars) {
-          ctx.beginPath();
-          ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
-          const tw = 0.4 + 0.6 * Math.sin((Date.now() / 700) * st.s + st.p);
-          ctx.fillStyle = `rgba(140,160,255,${tw})`;
-          ctx.fill();
-          st.x += st.s * 0.05;
-          if (st.x > bg.width + 5) st.x = -5;
+          ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI*2);
+          const tw = 0.35 + 0.65*Math.sin((Date.now()/700)*st.s + st.p);
+          ctx.fillStyle = `rgba(140,160,255,${tw})`; ctx.fill();
+          st.x += st.s*0.05; if (st.x > bg.width+5) st.x = -5;
         }
-      } else if (animState.type === "bubbles") {
+      } else { // bubbles
         for (const b of animState.bubbles) {
           ctx.beginPath();
-          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-          const grd = ctx.createRadialGradient(b.x - b.r*0.4, b.y - b.r*0.4, b.r*0.2, b.x, b.y, b.r);
+          const grd = ctx.createRadialGradient(b.x-b.r*0.4, b.y-b.r*0.4, b.r*0.2, b.x, b.y, b.r);
           grd.addColorStop(0, "rgba(255,255,255,0.35)");
           grd.addColorStop(0.4, b.c);
           grd.addColorStop(1, "rgba(255,255,255,0.02)");
           ctx.fillStyle = grd;
-          ctx.fill();
-          b.wob += 0.01;
-          b.x += b.vx + Math.sin(b.wob) * 0.15;
-          b.y += b.vy;
-          if (b.y + b.r < -10 || b.x < -50 || b.x > bg.width + 50) {
-            // respawn at bottom
-            Object.assign(b, makeBubble());
-            b.y = bg.height + b.r + Math.random() * 120;
-            b.x = Math.random() * bg.width;
-          }
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+          b.wob += 0.01; b.x += b.vx + Math.sin(b.wob)*0.15; b.y += b.vy;
+          if (b.y + b.r < -10 || b.x < -50 || b.x > bg.width + 50) Object.assign(b, makeBubble(), { y: bg.height + b.r, x: Math.random() * bg.width });
         }
       }
-
       rafId = requestAnimationFrame(drawBg);
     }
-
-    // Initial canvas sizing + animation
     resizeCanvas();
 
     // ---------- 8) Events ----------
@@ -472,7 +430,7 @@
     });
     boardEl.addEventListener("click", onCellClick);
 
-    // ---------- 9) Auto-join via URL ----------
+    // ---------- 9) Auto-join via URL (do NOT auto-create) ----------
     if (roomId) joinRoom(roomId, { allowCreateIfMissing: false });
 
     // ---------- 10) Presence ----------
@@ -498,9 +456,50 @@
     }
     function stopPresence() { unsubPresence && unsubPresence(); unsubPresence = null; }
 
-    // ---------- 11) Actions ----------
+    // ---------- 11) Room lifecycle (auto-delete when empty) ----------
+    function startLifecycleWatcher(room) {
+      stopLifecycleWatcher();
+      const presRef = db.ref(`rooms/${room}/presence`);
+      const roomRef = db.ref(`rooms/${room}`);
+      let deleteTimer = null;
+
+      const scheduleCheck = async () => {
+        const snap = await roomRef.get();
+        const state = snap.val();
+        if (!state) return;
+        const presenceSnap = await presRef.get();
+        const presenceEmpty = !presenceSnap.exists() || Object.keys(presenceSnap.val() || {}).length === 0;
+        if (presenceEmpty) {
+          if (!deleteTimer) {
+            // Grace period to avoid flapping (5s)
+            deleteTimer = setTimeout(async () => {
+              const latest = (await roomRef.get()).val();
+              const presLatest = (await presRef.get()).val();
+              const stillEmpty = !presLatest || Object.keys(presLatest).length === 0;
+              if (stillEmpty) {
+                await roomRef.remove();
+              }
+              deleteTimer = null;
+            }, 5000);
+          }
+        } else if (deleteTimer) {
+          clearTimeout(deleteTimer);
+          deleteTimer = null;
+        }
+      };
+
+      presRef.on("value", scheduleCheck);
+      roomRef.on("value", (s) => { if (!s.exists()) stopLifecycleWatcher(); });
+      lifecycleUnsub = () => {
+        presRef.off();
+        roomRef.off();
+      };
+    }
+    function stopLifecycleWatcher() { lifecycleUnsub && lifecycleUnsub(); lifecycleUnsub = null; }
+
+    // ---------- 12) Actions ----------
     async function onCreate() {
-      const id = generateRoomId();
+      const id = await createUniqueRoomId();
       const ref = db.ref(`rooms/${id}`);
       const initial = {
         board: Array(9).fill(""),
@@ -514,19 +513,15 @@
       };
       await ref.set(initial);
       setRoomInURL(id);
-      joinRoom(id, { allowCreateIfMissing: false }); // it exists, so just join
+      joinRoom(id, { allowCreateIfMissing: false });
     }
 
     async function onJoinPrompt() {
       const input = prompt("Enter room code (e.g., ABC123):");
       if (!input) return;
       const id = input.trim().toUpperCase();
-      // Validate that the room exists — do NOT create here
       const snap = await db.ref(`rooms/${id}`).get();
-      if (!snap.exists()) {
-        alert("Room not found. Check the code or ask your friend to share the link.");
-        return;
-      }
+      if (!snap.exists()) { alert("Room not found. Check the code or ask your friend to share the link."); return; }
       joinRoom(id, { allowCreateIfMissing: false });
     }
 
@@ -558,7 +553,7 @@
       });
     }
 
-    // ---------- 12) Join room ----------
+    // ---------- 13) Join room ----------
     function joinRoom(id, opts = { allowCreateIfMissing: false }) {
       cleanupRoom();
       roomId = id;
@@ -569,7 +564,6 @@
 
       const ref = db.ref(`rooms/${id}`);
 
-      // Create ONLY if explicitly allowed (we don't allow on join; only on create button)
       if (opts.allowCreateIfMissing) {
         ref.once("value").then((snap) => {
           if (!snap.exists()) {
@@ -626,6 +620,7 @@
         leaveBtn.disabled = !myNow;
 
         startPresence(id);
+        startLifecycleWatcher(id);
       });
 
       unsubRoom = () => ref.off();
@@ -636,9 +631,7 @@
       await ref.transaction((state) => {
         if (!state) return state;
         if (!state.players) state.players = { X: "", O: "" };
-        // If already seated, leave as-is
         if (state.players.X === clientId || state.players.O === clientId) return state;
-        // Seat only if free at transaction time
         if (!state.players[seat]) {
           state.players[seat] = clientId;
           state.updatedAt = firebase.database.ServerValue.TIMESTAMP;
@@ -647,7 +640,7 @@
       });
     }
 
-    // ---------- 13) Seats ----------
+    // ---------- 14) Seats ----------
     async function claimSeat(seat) {
       if (!roomId) return;
       if (seat !== "X" && seat !== "O") return;
@@ -665,7 +658,7 @@
       });
     }
 
-    // ---------- 14) Moves ----------
+    // ---------- 15) Moves ----------
     async function onCellClick(e) {
       const cell = e.target.closest(".cell");
       if (!cell || !roomId) return;
@@ -703,7 +696,7 @@
       });
     }
 
-    // ---------- 15) Logic ----------
+    // ---------- 16) Logic ----------
     function evaluate(board) {
       for (const line of WIN_LINES) {
         const [a,b,c] = line;
@@ -718,7 +711,7 @@
     }
     function canPlay(state) { return state.players?.X === clientId || state.players?.O === clientId; }
 
-    // ---------- 16) Render ----------
+    // ---------- 17) Render ----------
     function renderBoard(board, winnerLine = []) {
       const lineSet = new Set(winnerLine || []);
       for (const btn of boardEl.querySelectorAll(".cell")) {
@@ -775,7 +768,7 @@
       });
     }
 
-    // ---------- 17) UI helpers ----------
+    // ---------- 18) UI helpers ----------
     function setStatus(html) { statusEl.innerHTML = html; }
     function setYouAre(mark) {
       myMark = mark;
@@ -793,7 +786,7 @@
     }
     function clearBoard() { renderBoard(Array(9).fill(""), []); }
 
-    // ---------- 18) Sound & theme ----------
+    // ---------- 19) Sound & theme ----------
     function ding() {
       if (!soundsOn) return;
       try {
@@ -806,12 +799,10 @@
         g.gain.setValueAtTime(0.001, ctx.currentTime);
         g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.01);
         g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-        o.start();
-        o.stop(ctx.currentTime + 0.21);
+        o.start(); o.stop(ctx.currentTime + 0.21);
       } catch {}
     }
 
-    // Persist theme and update animation mode
     (function initTheme() {
       const k = "ttt_theme";
       const saved = localStorage.getItem(k);
@@ -830,16 +821,33 @@
     }
     function toggleSound() { soundsOn = !soundsOn; soundBtn.textContent = soundsOn ? "🔊" : "🔈"; }
 
-    // ---------- 19) Cleanup ----------
-    function cleanupRoom() { unsubRoom && unsubRoom(); unsubRoom = null; stopPresence(); }
+    // ---------- 20) Cleanup ----------
+    function cleanupRoom() {
+      unsubRoom && unsubRoom(); unsubRoom = null;
+      stopPresence();
+      stopLifecycleWatcher();
+    }
     window.addEventListener("beforeunload", () => { /* presence cleaned via onDisconnect */ });
 
-    // ---------- 20) URL helpers ----------
+    // ---------- 21) URL & ID helpers ----------
     function generateRoomId() {
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       let s = "";
       for (let i = 0; i < 6; i++) s += alphabet[(Math.random() * alphabet.length) | 0];
       return s;
+    }
+    async function createUniqueRoomId(maxAttempts = 20) {
+      for (let i = 0; i < maxAttempts; i++) {
+        const id = generateRoomId();
+        const exists = (await db.ref(`rooms/${id}`).get()).exists();
+        if (!exists) return id;
+      }
+      // Fallback with longer id if collisions happen absurdly
+      let id;
+      do {
+        id = generateRoomId() + generateRoomId();
+      } while ((await db.ref(`rooms/${id}`).get()).exists());
+      return id;
     }
     function getRoomFromURL() {
       const url = new URL(window.location.href);
@@ -851,7 +859,7 @@
       history.replaceState(null, "", url);
     }
 
-    // ---------- 21) Keyboard shortcuts ----------
+    // ---------- 22) Keyboard shortcuts ----------
     document.addEventListener("keydown", (e) => {
       if (!roomId) return;
       const map = { "1":0,"2":1,"3":2, "4":3,"5":4,"6":5, "7":6,"8":7,"9":8 };
