@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Orange TD — v1.27 (dual-synced, waves, matchmaking)</title>
+<title>Orange TD — v1.29 (wide map, synced, tower locks)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <style>
   :root {
@@ -50,7 +50,7 @@
   <span id="status" class="pill">Status: <strong id="statusText">waiting</strong></span>
   <span class="pill">P1: <strong id="p1Name">—</strong> <span class="muted" id="p1Tag"></span></span>
   <span class="pill">P2: <strong id="p2Name">—</strong> <span class="muted" id="p2Tag"></span></span>
-  <span class="pill">Version: <strong>1.27</strong></span>
+  <span class="pill">Version: <strong>1.29</strong></span>
   <div id="banner"></div>
 </div>
 
@@ -71,8 +71,8 @@
 <div id="wrap">
   <div class="panel">
     <h3>Build (P1)</h3>
-    <button class="btn act-select" data-p="1" data-t="basic">Basic Tower — 50g<br><small>Range 120 • Dmg 1 • 1.1s</small></button>
-    <button class="btn act-select" data-p="1" data-t="sniper">Sniper Tower — 100g<br><small>Range 200 • Dmg 4 • 4.0s</small></button>
+    <button class="btn act-select" data-p="1" data-t="basic" id="build1-basic">Basic Tower — 50g<br><small>Range 120 • Dmg 1 • 1.1s</small></button>
+    <button class="btn act-select" data-p="1" data-t="sniper" id="build1-sniper">Sniper Tower — 100g<br><small>Range 300 • Dmg 4 • 4.0s</small></button>
 
     <div class="sep"></div>
     <h3>Send (P1)</h3>
@@ -84,12 +84,12 @@
     <button class="btn" id="sell1">Sell Mode: Off</button>
   </div>
 
-  <canvas id="game" width="1200" height="860"></canvas>
+  <canvas id="game" width="2400" height="700"></canvas>
 
   <div class="panel right">
     <h3>Build (P2)</h3>
-    <button class="btn act-select" data-p="2" data-t="basic">Basic Tower — 50g<br><small>Range 120 • Dmg 1 • 1.1s</small></button>
-    <button class="btn act-select" data-p="2" data-t="sniper">Sniper Tower — 100g<br><small>Range 200 • Dmg 4 • 4.0s</small></button>
+    <button class="btn act-select" data-p="2" data-t="basic" id="build2-basic">Basic Tower — 50g<br><small>Range 120 • Dmg 1 • 1.1s</small></button>
+    <button class="btn act-select" data-p="2" data-t="sniper" id="build2-sniper">Sniper Tower — 100g<br><small>Range 300 • Dmg 4 • 4.0s</small></button>
 
     <div class="sep"></div>
     <h3>Send (P2)</h3>
@@ -108,8 +108,8 @@
 
 <script>
 /* ================= Shared store (localStorage) ================= */
-const KEY = 'orange_td_v127'; // bumped version for safe localStorage separation
-const TICK = 0.016; // ~60 Hz quantization for tighter sync
+const KEY = 'orange_td_v129'; // versioned for storage separation
+const TICK = 0.016; // ~60Hz quantization for tighter sync
 
 // Per-tab identity
 const MY = {
@@ -124,7 +124,7 @@ const MY = {
 
 const TowerDefs = {
   basic:  { cost:50, range:120, dmg:1, fireRate:1.1, color:'#8fd3fe' },
-  sniper: { cost:100, range:200, dmg:4, fireRate:4.0, color:'#b9ff8a' }
+  sniper: { cost:100, range:300, dmg:4, fireRate:4.0, color:'#b9ff8a' } // range buffed
 };
 const CreepDefs = {
   normal: { cost:25, hp:6,  speed:40, bounty:10, color:'#ff6f61', unlockWave:2, cd:0.5 },
@@ -349,18 +349,20 @@ window.addEventListener('beforeunload', () => {
     h1: document.getElementById('h1'), h2: document.getElementById('h2'),
     sell1: document.getElementById('sell1'), sell2: document.getElementById('sell2'),
     send1: { normal: document.getElementById('send1-normal'), fast: document.getElementById('send1-fast'), slow: document.getElementById('send1-slow') },
-    send2: { normal: document.getElementById('send2-normal'), fast: document.getElementById('send2-fast'), slow: document.getElementById('send2-slow') }
+    send2: { normal: document.getElementById('send2-normal'), fast: document.getElementById('send2-fast'), slow: document.getElementById('send2-slow') },
+    build1: { basic: document.getElementById('build1-basic'), sniper: document.getElementById('build1-sniper') },
+    build2: { basic: document.getElementById('build2-basic'), sniper: document.getElementById('build2-sniper') }
   };
 
-  // Stretched map: taller playfield
-  const WORLD = { w:1200, h:860, laneY:430, half:600 };
+  // Much wider map, same height
+  const WORLD = { w:2400, h:700, laneY:350, half:1200 };
 
   // Local deterministic world state
   const L = {
     time: 0,
     over: false, winner: null,
-    bases: { 1:{ x:80, y:WORLD.laneY, hp:100 }, 2:{ x:1120, y:WORLD.laneY, hp:100 } },
-    gold: { 1:100, 2:100 }, // Start with 100 gold (changed)
+    bases: { 1:{ x:80, y:WORLD.laneY, hp:100 }, 2:{ x:WORLD.w-80, y:WORLD.laneY, hp:100 } },
+    gold: { 1:100, 2:100 }, // start with 100 gold
     selected: { 1:'basic', 2:'basic' },
     selling: { 1:false, 2:false },
     towers: [], creeps: [], bullets: [],
@@ -398,6 +400,7 @@ window.addEventListener('beforeunload', () => {
     });
     ui.sell2.disabled = !(canAct && myP === 2);
 
+    updateBuildLocks();
     updateSendLocks();
   }
   window.lockSideControls = lockSideControls;
@@ -495,10 +498,10 @@ window.addEventListener('beforeunload', () => {
           if (S.status!=='wave') break;
           if (role && s.players[role].id !== a.from) break;
           const def = CreepDefs[a.c]; if (!def) break;
-          if (S.waveNumber < def.unlockWave) break;
+          if (S.waveNumber < def.unlockWave) break; // locked until unlock wave
           const last = L.lastSend[a.p][a.c] || -Infinity;
-          if (a.t - last < def.cd - 1e-6) break;
-          if (L.gold[a.p] < def.cost) break;
+          if (a.t - last < def.cd - 1e-6) break;    // respect cooldown
+          if (L.gold[a.p] < def.cost) break;        // respect gold
           L.gold[a.p] -= def.cost;
           L.lastSend[a.p][a.c] = a.t;
           spawnCreep(a.p, a.c, a.seq);
@@ -510,11 +513,11 @@ window.addEventListener('beforeunload', () => {
           const type = L.selected[a.p];
           const def = TowerDefs[type]; if (!def) break;
           const xClamped = clamp(a.x, a.p===1?40:WORLD.half+40, a.p===1?WORLD.half-40:WORLD.w-40);
-          const yClamped = clamp(a.y, WORLD.laneY-220, WORLD.laneY+220); // a bit taller build band
+          const yClamped = clamp(a.y, WORLD.laneY-220, WORLD.laneY+220);
           let ok = true;
           for (const t of L.towers) { if (t.p===a.p && dist({x:xClamped,y:yClamped}, t) < 30) { ok=false; break; } }
           if (!ok) break;
-          if (L.gold[a.p] < def.cost) break;
+          if (L.gold[a.p] < def.cost) break; // cannot afford
           L.gold[a.p] -= def.cost;
           L.towers.push({ p:a.p, x:xClamped, y:yClamped, type, cooldown:0, ...def });
         } break;
@@ -633,7 +636,7 @@ window.addEventListener('beforeunload', () => {
       const onWave = w >= def.unlockWave && S.status==='wave';
       const cdRemain = Math.max(0, (L.lastSend[1][k]||-Infinity) + def.cd - now);
       const enoughGold = L.gold[1] >= def.cost;
-      btn.disabled = !(onWave && cdRemain <= 0 && enoughGold);
+      btn.disabled = !(onWave && cdRemain <= 0 && enoughGold && MY.role==='P1' && occupied('P1') && occupied('P2'));
       btn.title = (!onWave ? `Unlocks on Wave ${def.unlockWave}` :
                    cdRemain>0 ? `Cooldown: ${cdRemain.toFixed(2)}s` :
                    !enoughGold ? `Need ${def.cost} gold` : '');
@@ -645,10 +648,31 @@ window.addEventListener('beforeunload', () => {
       const onWave = w >= def.unlockWave && S.status==='wave';
       const cdRemain = Math.max(0, (L.lastSend[2][k]||-Infinity) + def.cd - now);
       const enoughGold = L.gold[2] >= def.cost;
-      btn.disabled = !(onWave && cdRemain <= 0 && enoughGold);
+      btn.disabled = !(onWave && cdRemain <= 0 && enoughGold && MY.role==='P2' && occupied('P1') && occupied('P2'));
       btn.title = (!onWave ? `Unlocks on Wave ${def.unlockWave}` :
                    cdRemain>0 ? `Cooldown: ${cdRemain.toFixed(2)}s` :
                    !enoughGold ? `Need ${def.cost} gold` : '');
+    }
+  }
+
+  function updateBuildLocks(){
+    // Disable build buttons if unaffordable or you don't control that side
+    const canBuild = (S.status==='build' || S.status==='wave') && !L.over && occupied('P1') && occupied('P2');
+    // P1
+    for (const t of ['basic','sniper']){
+      const btn = ui.build1[t];
+      const def = TowerDefs[t];
+      const affordable = L.gold[1] >= def.cost;
+      btn.disabled = !(canBuild && MY.role==='P1' && affordable);
+      btn.title = affordable ? '' : `Need ${def.cost} gold`;
+    }
+    // P2
+    for (const t of ['basic','sniper']){
+      const btn = ui.build2[t];
+      const def = TowerDefs[t];
+      const affordable = L.gold[2] >= def.cost;
+      btn.disabled = !(canBuild && MY.role==='P2' && affordable);
+      btn.title = affordable ? '' : `Need ${def.cost} gold`;
     }
   }
 
@@ -659,6 +683,7 @@ window.addEventListener('beforeunload', () => {
       const p = +btn.dataset.p;
       if ((p===1 && MY.role!=='P1') || (p===2 && MY.role!=='P2')) return;
       const t = btn.dataset.t;
+      // extra guard: prevent selecting unaffordable tower from placing immediately, selection is fine though
       pushAction({ type:'select', p, t });
     });
   });
@@ -747,7 +772,11 @@ window.addEventListener('beforeunload', () => {
       const bx = enemy===1? L.bases[1].x : L.bases[2].x;
       const by = WORLD.laneY;
       if (Math.hypot(c.x-bx, c.y-by) < 22){
-        L.bases[enemy].hp = clamp(L.bases[enemy].hp - 10, 0, 1000);
+        // Base takes damage equal to creep's current HP, and defender gains bounty
+        const damage = Math.max(0, Math.min(c.hp, L.bases[enemy].hp));
+        L.bases[enemy].hp = clamp(L.bases[enemy].hp - damage, 0, 1000);
+        const bounty = (CreepDefs[c.type]?.bounty || 10);
+        L.gold[enemy] += bounty; // defender gets gold on hit
         L.creeps.splice(i,1);
         if (L.bases[enemy].hp<=0 && !L.over){
           finishMatch(enemy===1?2:1);
@@ -780,9 +809,9 @@ window.addEventListener('beforeunload', () => {
     ctx.moveTo(WORLD.half, 0); ctx.lineTo(WORLD.half, canvas.height); ctx.stroke();
     ctx.setLineDash([]);
 
-    // lane band (taller)
+    // lane band
     ctx.fillStyle = '#111633';
-    ctx.fillRect(0, WORLD.laneY-240, canvas.width, 480);
+    ctx.fillRect(0, WORLD.laneY-200, canvas.width, 400);
 
     // bases
     drawBase(1); drawBase(2);
@@ -882,8 +911,9 @@ window.addEventListener('beforeunload', () => {
     // Auto-advance waves and manual skip logic
     if (S.status==='wave') waveAutoAdvanceCheck();
 
-    // Update header wave text and send locks
+    // Update header wave text and button locks
     waveHeader.textContent = `Wave: ${S.waveNumber}`;
+    updateBuildLocks();
     updateSendLocks();
 
     draw();
