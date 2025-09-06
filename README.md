@@ -45,7 +45,7 @@
       display: grid;
       grid-template-rows: auto 1fr auto;
       padding: clamp(16px, 3vw, 24px);
-      max-width: 880px;
+      max-width: 920px;
       margin: 0 auto;
     }
 
@@ -107,16 +107,16 @@
     }
     .status strong { color: var(--text); }
 
-    .content-grid {
+    .layout {
       display: grid;
+      grid-template-columns: 1fr 280px;
       gap: 16px;
-      grid-template-columns: 1.2fr 1fr;
       align-items: start;
     }
 
     .seat-row {
       display: grid;
-      grid-template-columns: repeat(2, minmax(120px, 1fr));
+      grid-template-columns: repeat(2, minmax(100px, 1fr));
       gap: 10px;
     }
     .seat { background: #1b2344; }
@@ -126,25 +126,25 @@
     .board-wrap {
       display: grid;
       place-items: center;
+      padding: 8px 0;
     }
     .board {
-      width: min(88vw, 520px);
-      max-width: 520px;
-      margin: 0 auto;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      user-select: none;
+      gap: 8px;
+      width: 100%;
+      max-width: min(88vw, 360px);
+      margin: 0 auto;
     }
     .cell {
       aspect-ratio: 1 / 1;
-      font-size: clamp(36px, 10vw, 64px);
+      font-size: clamp(28px, 8vw, 48px);
       font-weight: 800;
       letter-spacing: 1px;
       color: var(--text);
       background: linear-gradient(180deg, var(--card-2), var(--card));
       border: 1px solid var(--grid);
-      border-radius: 16px;
+      border-radius: 12px;
       text-shadow: 0 6px 22px rgba(0,0,0,0.5);
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
       position: relative;
@@ -166,7 +166,7 @@
 
     .meta {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 12px;
     }
     .score, .presence {
@@ -203,11 +203,10 @@
     .light body { background: linear-gradient(160deg, var(--bg-2), var(--bg)); }
     .light .panel { background: #ffffff; }
 
-    @media (max-width: 920px) {
-      .content-grid { grid-template-columns: 1fr; }
-      .board { width: min(92vw, 520px); }
+    @media (max-width: 840px) {
+      .layout { grid-template-columns: 1fr; }
+      .board { max-width: min(92vw, 360px); }
     }
-
     @media (max-width: 520px) {
       .meta { grid-template-columns: 1fr; }
     }
@@ -242,7 +241,7 @@
 
       <div id="status" class="status">Create or join a room to start</div>
 
-      <div class="content-grid">
+      <div class="layout">
         <div>
           <div class="seat-row">
             <button id="takeXBtn" class="seat">Take X</button>
@@ -290,9 +289,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <script>
-    // ---------- 1) Firebase config ----------
-    // REPLACE placeholders with your Firebase project's values for this to work online.
-    // Get them from: Firebase Console > Project settings > Your apps (Web)
+    // ---------- 1) Firebase config (replace with your project's values) ----------
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -311,10 +308,7 @@
     const clientId = (() => {
       const k = "ttt_client_id_v2";
       let id = localStorage.getItem(k);
-      if (!id) {
-        id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2);
-        localStorage.setItem(k, id);
-      }
+      if (!id) { id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2); localStorage.setItem(k, id); }
       return id;
     })();
     const now = () => Date.now();
@@ -354,29 +348,107 @@
       [0,4,8],[2,4,6]
     ];
 
-    // ---------- 7) Background animation ----------
+    // ---------- 7) Background animations (dark: stars, light: bubbles) ----------
     const ctx = bg.getContext("2d");
-    function resizeCanvas() { bg.width = window.innerWidth; bg.height = window.innerHeight; }
-    window.addEventListener("resize", resizeCanvas); resizeCanvas();
+    let rafId = null;
+    let animState = null;
 
-    let stars = Array.from({ length: 90 }, () => ({
-      x: Math.random() * bg.width,
-      y: Math.random() * bg.height,
-      r: Math.random() * 1.8 + 0.4,
-      s: Math.random() * 0.6 + 0.2
-    }));
-    (function drawBg(){
-      ctx.clearRect(0, 0, bg.width, bg.height);
-      for (const st of stars) {
-        ctx.beginPath();
-        ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(140,160,255,${0.4 + 0.6*Math.sin((Date.now()/700)*st.s)})`;
-        ctx.fill();
-        st.x += st.s * 0.05;
-        if (st.x > bg.width + 5) st.x = -5;
+    function resizeCanvas() {
+      bg.width = window.innerWidth;
+      bg.height = window.innerHeight;
+      initAnimation(); // reinit on resize for crispness
+    }
+    window.addEventListener("resize", resizeCanvas);
+
+    function initAnimation() {
+      cancelAnimationFrame(rafId);
+      const isLight = document.documentElement.classList.contains("light");
+      if (isLight) {
+        // Light mode: soft pastel bubbles rising and drifting
+        animState = {
+          type: "bubbles",
+          bubbles: Array.from({ length: 30 }, () => makeBubble())
+        };
+      } else {
+        // Dark mode: starfield drift + twinkle
+        animState = {
+          type: "stars",
+          stars: Array.from({ length: 90 }, () => makeStar())
+        };
       }
-      requestAnimationFrame(drawBg);
-    })();
+      drawBg();
+    }
+
+    function makeStar() {
+      return {
+        x: Math.random() * bg.width,
+        y: Math.random() * bg.height,
+        r: Math.random() * 1.8 + 0.4,
+        s: Math.random() * 0.6 + 0.2,
+        p: Math.random() * Math.PI * 2
+      };
+    }
+
+    function makeBubble() {
+      const palette = [
+        "rgba(108,140,255,0.18)",
+        "rgba(154,123,255,0.16)",
+        "rgba(89,217,143,0.16)",
+        "rgba(255,184,108,0.14)",
+        "rgba(255,107,107,0.14)"
+      ];
+      return {
+        x: Math.random() * bg.width,
+        y: bg.height + Math.random() * 200,
+        r: Math.random() * 40 + 12,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: - (Math.random() * 0.6 + 0.2),
+        c: palette[(Math.random() * palette.length) | 0],
+        wob: Math.random() * Math.PI * 2
+      };
+    }
+
+    function drawBg() {
+      ctx.clearRect(0, 0, bg.width, bg.height);
+      if (!animState) { rafId = requestAnimationFrame(drawBg); return; }
+
+      if (animState.type === "stars") {
+        for (const st of animState.stars) {
+          ctx.beginPath();
+          ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+          const tw = 0.4 + 0.6 * Math.sin((Date.now() / 700) * st.s + st.p);
+          ctx.fillStyle = `rgba(140,160,255,${tw})`;
+          ctx.fill();
+          st.x += st.s * 0.05;
+          if (st.x > bg.width + 5) st.x = -5;
+        }
+      } else if (animState.type === "bubbles") {
+        for (const b of animState.bubbles) {
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          const grd = ctx.createRadialGradient(b.x - b.r*0.4, b.y - b.r*0.4, b.r*0.2, b.x, b.y, b.r);
+          grd.addColorStop(0, "rgba(255,255,255,0.35)");
+          grd.addColorStop(0.4, b.c);
+          grd.addColorStop(1, "rgba(255,255,255,0.02)");
+          ctx.fillStyle = grd;
+          ctx.fill();
+          b.wob += 0.01;
+          b.x += b.vx + Math.sin(b.wob) * 0.15;
+          b.y += b.vy;
+          if (b.y + b.r < -10 || b.x < -50 || b.x > bg.width + 50) {
+            // respawn at bottom
+            Object.assign(b, makeBubble());
+            b.y = bg.height + b.r + Math.random() * 120;
+            b.x = Math.random() * bg.width;
+          }
+        }
+      }
+
+      rafId = requestAnimationFrame(drawBg);
+    }
+
+    // Initial canvas sizing + animation
+    resizeCanvas();
 
     // ---------- 8) Events ----------
     createBtn.addEventListener("click", onCreate);
@@ -401,7 +473,7 @@
     boardEl.addEventListener("click", onCellClick);
 
     // ---------- 9) Auto-join via URL ----------
-    if (roomId) joinRoom(roomId);
+    if (roomId) joinRoom(roomId, { allowCreateIfMissing: false });
 
     // ---------- 10) Presence ----------
     let roomPresenceRef = null;
@@ -442,13 +514,20 @@
       };
       await ref.set(initial);
       setRoomInURL(id);
-      joinRoom(id);
+      joinRoom(id, { allowCreateIfMissing: false }); // it exists, so just join
     }
 
-    function onJoinPrompt() {
+    async function onJoinPrompt() {
       const input = prompt("Enter room code (e.g., ABC123):");
       if (!input) return;
-      joinRoom(input.trim().toUpperCase());
+      const id = input.trim().toUpperCase();
+      // Validate that the room exists — do NOT create here
+      const snap = await db.ref(`rooms/${id}`).get();
+      if (!snap.exists()) {
+        alert("Room not found. Check the code or ask your friend to share the link.");
+        return;
+      }
+      joinRoom(id, { allowCreateIfMissing: false });
     }
 
     async function onCopy() {
@@ -480,7 +559,7 @@
     }
 
     // ---------- 12) Join room ----------
-    function joinRoom(id) {
+    function joinRoom(id, opts = { allowCreateIfMissing: false }) {
       cleanupRoom();
       roomId = id;
       setRoomInURL(id);
@@ -490,21 +569,23 @@
 
       const ref = db.ref(`rooms/${id}`);
 
-      // Soft-create if missing
-      ref.once("value").then((snap) => {
-        if (!snap.exists()) {
-          ref.set({
-            board: Array(9).fill(""),
-            current: "X",
-            players: { X: "", O: "" },
-            status: "playing",
-            winnerLine: [-1, -1, -1],
-            score: { X: 0, O: 0 },
-            createdAt: now(),
-            updatedAt: now()
-          });
-        }
-      });
+      // Create ONLY if explicitly allowed (we don't allow on join; only on create button)
+      if (opts.allowCreateIfMissing) {
+        ref.once("value").then((snap) => {
+          if (!snap.exists()) {
+            ref.set({
+              board: Array(9).fill(""),
+              current: "X",
+              players: { X: "", O: "" },
+              status: "playing",
+              winnerLine: [-1, -1, -1],
+              score: { X: 0, O: 0 },
+              createdAt: now(),
+              updatedAt: now()
+            });
+          }
+        });
+      }
 
       ref.on("value", async (snap) => {
         const state = snap.val();
@@ -515,30 +596,30 @@
           return;
         }
 
-        const mark = state.players?.X === clientId ? "X"
-                   : state.players?.O === clientId ? "O" : null;
+        const currentMark = state.players?.X === clientId ? "X"
+                           : state.players?.O === clientId ? "O" : null;
 
-        // Auto-assign a random seat if available and you don't have one yet
-        if (!mark) {
+        // Auto-assign random seat if available and user has none
+        if (!currentMark) {
           const freeSeats = [];
           if (!state.players?.X) freeSeats.push("X");
           if (!state.players?.O) freeSeats.push("O");
           if (freeSeats.length) {
-            const randomSeat = freeSeats[Math.floor(Math.random() * freeSeats.length)];
+            const randomSeat = freeSeats[(Math.random() * freeSeats.length) | 0];
             await tryAutoSeat(id, randomSeat);
           }
         }
 
-        // Recompute mark after potential auto-seat
-        const latest = (await ref.get()).val();
-        const myNow = latest?.players?.X === clientId ? "X"
-                     : latest?.players?.O === clientId ? "O" : null;
+        // Update local mark after potential auto-seat
+        const latest = (await ref.get()).val() || state;
+        const myNow = latest.players?.X === clientId ? "X"
+                     : latest.players?.O === clientId ? "O" : null;
         setYouAre(myNow);
 
-        updateSeatButtons(latest || state);
-        renderBoard((latest || state).board, (latest || state).winnerLine);
-        renderStatus(latest || state);
-        renderScore((latest || state).score);
+        updateSeatButtons(latest);
+        renderBoard(latest.board, latest.winnerLine);
+        renderStatus(latest);
+        renderScore(latest.score);
 
         copyBtn.disabled = false;
         resetBtn.disabled = false;
@@ -557,7 +638,7 @@
         if (!state.players) state.players = { X: "", O: "" };
         // If already seated, leave as-is
         if (state.players.X === clientId || state.players.O === clientId) return state;
-        // Seat only if still free at transaction time
+        // Seat only if free at transaction time
         if (!state.players[seat]) {
           state.players[seat] = clientId;
           state.updatedAt = firebase.database.ServerValue.TIMESTAMP;
@@ -730,12 +811,13 @@
       } catch {}
     }
 
-    // Persist theme
+    // Persist theme and update animation mode
     (function initTheme() {
       const k = "ttt_theme";
       const saved = localStorage.getItem(k);
       if (saved === "light") document.documentElement.classList.add("light");
       themeBtn.textContent = document.documentElement.classList.contains("light") ? "🌞" : "🌗";
+      initAnimation();
     })();
 
     function toggleTheme() {
@@ -744,6 +826,7 @@
       const isLight = document.documentElement.classList.contains("light");
       localStorage.setItem(k, isLight ? "light" : "dark");
       themeBtn.textContent = isLight ? "🌞" : "🌗";
+      initAnimation();
     }
     function toggleSound() { soundsOn = !soundsOn; soundBtn.textContent = soundsOn ? "🔊" : "🔈"; }
 
