@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Live Online Users</title>
+  <title>Live Online Players</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; }
     .wrap { max-width: 760px; margin: 8vh auto; padding: 24px; }
@@ -19,7 +19,7 @@
 <body>
   <div class="wrap">
     <div class="card">
-      <h1>People online right now</h1>
+      <h1>Players on this page</h1>
       <div id="onlineCount" class="count">0</div>
       <div id="status" class="muted">Starting…</div>
       <div id="details" class="muted"></div>
@@ -43,19 +43,18 @@
       error: document.getElementById("error"),
     };
 
-    // 1) Replace with YOUR Firebase config (from Firebase Console -> Project settings -> Your apps).
+    // 🔹 Replace with your Firebase config
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
       databaseURL: "https://YOUR_INSTANCE_ID.europe-west1.firebasedatabase.app",
-      // Example format: https://your-project-default-rtdb.europe-west1.firebasedatabase.app
       projectId: "YOUR_PROJECT_ID",
       storageBucket: "YOUR_PROJECT_ID.appspot.com",
       messagingSenderId: "YOUR_SENDER_ID",
       appId: "YOUR_APP_ID"
     };
 
-    const log = (...args) => { console.log("[presence]", ...args); };
+    const log = (...args) => console.log("[presence]", ...args);
     const showStatus = (text, ok = false) => {
       ui.status.textContent = text;
       ui.status.className = "muted" + (ok ? " ok" : "");
@@ -64,10 +63,13 @@
     const showError = (e) => ui.error.textContent = (typeof e === "string") ? e : (e?.message || String(e));
 
     try {
-      // 2) Init Firebase
+      // 1) Init Firebase
       const app = initializeApp(firebaseConfig);
       const db = getDatabase(app);
       showStatus("Initialized Firebase…");
+
+      // 2) Identify this page (could also be a game room ID)
+      const pageId = encodeURIComponent(window.location.pathname);
 
       // 3) Monitor connection state
       const connectedRef = ref(db, ".info/connected");
@@ -75,18 +77,18 @@
       let sessionRef = null;
       let beatTimer = null;
 
-      // 4) Always subscribe to sessions to show count (even before we register)
-      const sessionsRef = ref(db, "presence/sessions");
+      // 4) Listen for sessions only on this page
+      const sessionsRef = ref(db, `presence/pages/${pageId}/sessions`);
       onValue(sessionsRef, (snap) => {
         const data = snap.val() || {};
         const count = Object.keys(data).length;
         ui.count.textContent = String(count);
-        showDetails(`Connected sessions seen by this client: ${count}`);
+        showDetails(`Players on this page: ${count}`);
       }, (err) => {
         showError("Failed to listen to sessions: " + err.message);
       });
 
-      // 5) Only write presence after we are really connected
+      // 5) Register presence when connected
       onValue(connectedRef, async (snap) => {
         const isConnected = snap.val() === true;
         log("connected =", isConnected);
@@ -97,10 +99,9 @@
 
         showStatus("Connected to Realtime Database", true);
 
-        // Register our session if not yet registered
         if (!registered) {
           const sessionId = (crypto.randomUUID?.() || Math.random().toString(36).slice(2)) + "-" + Date.now();
-          sessionRef = ref(db, `presence/sessions/${sessionId}`);
+          sessionRef = ref(db, `presence/pages/${pageId}/sessions/${sessionId}`);
           log("Registering session", sessionId);
 
           try {
@@ -116,7 +117,7 @@
             return;
           }
 
-          // Heartbeat every 25s to keep lastSeen fresh
+          // Heartbeat every 25s
           const beat = () => update(sessionRef, { lastSeen: serverTimestamp() }).catch((e) => log("heartbeat failed", e));
           beatTimer = setInterval(beat, 25000);
           document.addEventListener("visibilitychange", () => { if (!document.hidden) beat(); });
