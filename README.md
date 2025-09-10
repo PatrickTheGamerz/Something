@@ -25,7 +25,8 @@
   .badge { padding:2px 8px; border-radius:12px; background:#222742; color:var(--sub); }
   .p1 { color:var(--p1); }
   .p2 { color:var(--p2); }
-  #wrap { display:grid; grid-template-columns:240px 1fr 240px; height:calc(100vh - 56px - 52px); }
+  /* Unsquash: let center column size itself, don't force height */
+  #wrap { display:grid; grid-template-columns:240px 1fr 240px; align-items:start; }
   .panel { background:var(--panel); border-right:1px solid #2a2f4a; padding:10px; overflow:auto; }
   .panel.right { border-right:none; border-left:1px solid #2a2f4a; }
   .panel h3 { margin:0 0 8px; font-size:13px; color:var(--sub); letter-spacing:.4px; text-transform:uppercase; }
@@ -35,7 +36,8 @@
   .btn small { color:var(--sub); }
   .row { display:flex; gap:8px; }
   .hint { color:var(--sub); font-size:12px; margin-top:6px; }
-  canvas { display:block; width:100%; height:100%; background:linear-gradient(#0f1220,#0d1122); }
+  /* Unsquash: keep aspect ratio, don't stretch height to grid cell */
+  canvas { display:block; max-width:100%; height:auto; background:linear-gradient(#0f1220,#0d1122); }
   footer { position:fixed; left:0; right:0; bottom:0; padding:6px 10px; font-size:12px; color:var(--sub); text-align:center; background:rgba(15,18,32,.6); backdrop-filter: blur(4px); }
   .warn { color:var(--warn); }
   .sep { height:6px; }
@@ -826,15 +828,22 @@ window.addEventListener('beforeunload', () => {
       ctx.beginPath(); ctx.arc(t.x,t.y,6,0,Math.PI*2); ctx.fill();
     }
 
-    // creeps
+    // creeps (make the other player's enemies more transparent)
     for (const c of L.creeps){
+      const myRole = MY.role || 'P1';
+      const isEnemyToMe = (myRole === 'P1' && c.p === 2) || (myRole === 'P2' && c.p === 1);
+      ctx.globalAlpha = isEnemyToMe ? 0.45 : 1;
+
       ctx.fillStyle = c.color;
       ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,Math.PI*2); ctx.fill();
+
       // hp bar
       const w = 26, h = 4;
       ctx.fillStyle = '#00000080'; ctx.fillRect(c.x-w/2, c.y-c.r-10, w, h);
       ctx.fillStyle = '#6eff6e'; ctx.fillRect(c.x-w/2, c.y-c.r-10, w*(c.hp/c.maxHp), h);
       ctx.strokeStyle = '#00000040'; ctx.strokeRect(c.x-w/2, c.y-c.r-10, w, h);
+
+      ctx.globalAlpha = 1;
     }
 
     // bullets
