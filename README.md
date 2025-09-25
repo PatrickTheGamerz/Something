@@ -2,831 +2,641 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>EToH Ring 1: 2-Player Platformer</title>
+  <title>JToH/EToH Tower Platformer</title>
   <style>
-    html, body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      background: #181D2A;
-      overflow: hidden;
-    }
-    body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      user-select: none;
-    }
-    #gameCanvas {
-      position: absolute;
-      left: 0; top: 0; right: 0; bottom: 0;
-      width: 100vw; height: 100vh;
-      background: #181D2A;
-      display: block;
-      outline: none;
-    }
-    #uiOverlay {
-      position: absolute;
-      top: 0; left: 0; width: 100%; z-index: 2;
-      pointer-events: none;
-      color: #FFF;
-      font-size: 22px;
-      text-align: center;
-      text-shadow: 0 2px 6px rgba(0,0,0,0.7);
-      transition: opacity 0.3s;
-    }
-    .button {
-      background: #202A44;
-      border: none;
-      color: #fff;
-      padding: 7px 18px;
-      margin: 0 8px;
-      border-radius: 7px;
-      cursor: pointer;
-      font-size: 18px;
-      font-weight: 500;
-      box-shadow: 0 4px 16px rgba(20,30,44,0.36);
-      outline: none;
-      transition: background 0.25s;
-    }
-    .button:active {
-      background: #2355B1;
-    }
-    @media (max-width: 700px) {
-      #gameCanvas {
-        width: 100vw; height: 80vw;
-        max-height: 60vh;
-      }
-    }
+    body { background: #191a1c; color: #eee; margin: 0; overflow: hidden; }
+    canvas { background: #191a1c; display: block; margin: 0 auto; }
+    #game-ui { position:absolute; top:0; left:0; width:100%; color:#fff; font-family:monospace; font-size:1.2em; text-shadow:2px 2px 4px #000;}
+    .centered { position: absolute; left: 50%; top: 25%; transform: translate(-50%, -25%); }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" tabindex="1"></canvas>
-  <div id="uiOverlay"></div>
+<div id="game-ui"></div>
+<canvas id="game" width="1280" height="720"></canvas>
 <script>
-/************************************************
-   EToH/JToH Inspired 2-Player HTML5 Platformer
-   By: Research Synthesis (2025)
-   See top of file for CSS and HTML structure.
-************************************************/
-
-/*------------------- Utility Functions -------------------*/
-// Clamp value
-function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
-// Colors for players
-const PLAYER_COLORS = ["#4BC2FF", "#FF5999"];
-const PLAYER_NAMES = ["Player 1", "Player 2"];
-
-// Axis-aligned bounding box collision
-function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
-  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-}
-
-// Interpolate
-function lerp(a, b, t) { return a + (b - a) * t; }
-
-// Tweening for cutscenes
-function easeInOutQuad(t){ return t<0.5 ? 2*t*t : 1-(-2*t+2)**2/2; }
-
-/*------------------- Canvas Setup -------------------*/
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const uiOverlay = document.getElementById('uiOverlay');
-
-let C_WIDTH = 980, C_HEIGHT = 690;
-function resizeCanvas() {
-  // Responsive resize keeping aspect ratio
-  const ratio = C_WIDTH/C_HEIGHT;
-  let w = window.innerWidth, h = window.innerHeight;
-  if(w/h > ratio) w = h*ratio; else h = w/ratio;
-  canvas.width = C_WIDTH; canvas.height = C_HEIGHT;
-  canvas.style.width = w+"px"; canvas.style.height = h+"px";
-}
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
-/*------------------- Game Constants -------------------*/
-const GRAVITY = 0.74;
-const MAX_FLOORS = 10; // Demo, varies per tower
-const FLOOR_HEIGHT = 120; // Distance between floors
-const PLAYER_WIDTH = 30, PLAYER_HEIGHT = 40;
-const MOVE_SPD = 3.2;
-const JUMP_PWR = 10.5;
-const SPLIT_DIST = FLOOR_HEIGHT * 2.7; // Split when players are far vertically
-
-// HP Mechanics
-const PLAYER_MAX_HP = 100, HAZARD_DMG = 5, HP_REGEN = 7; // per sec
-
-/*------------------- Key Level Data (DEMO: ToAST, ToK, CoLS) -------------------*/
-const TOWER_PRESETS = [
-  // Tower of A Simple Time (ToAST): Easy
-  {
-    id: "ToAST", name: "Tower of A Simple Time",
-    palette: ["#758DEB", "#b9daf2", "#dddceb", "#212A5C"],
-    floors: [
-      // Platforms: x, y, w, h
-      [ 
-        {x: 60, y: 0, w: 340, h: 18}, // F1 base
-        {x: 140, y: 60, w: 260, h: 16}, // F2
-        {x: 100, y: 120, w: 150, h: 16},
-        {x: 260, y: 180, w: 150, h: 16},
-        {x: 80, y: 240, w: 320, h: 16}, // F5
-        {x: 180, y: 300, w: 220, h: 14},
-        {x: 60, y: 360, w: 140, h: 16},
-        {x: 340, y: 420, w: 110, h: 16},
-        {x: 90, y: 480, w: 340, h: 14},
-        {x: 180, y: 540, w: 220, h: 16}, // F10
-      ],
-      // Hazards: x, y, w, h; (floor #, y rel to base)
-      [
-        {x:132, y:120, w:41, h:7, f:2}, // F3
-        {x:370, y:300, w:30, h:7, f:6},
-      ]
-    ],
-    intro: "Beginner tower with simple jumps and a welcoming palette. Pure platform basics.",
-    totalFloors: 10,
+// ==== SETTINGS & DATA ====
+// Tower metadata and simplified layouts for demonstration (expand for full auth.)
+const TOWER_LIST = [
+  { 
+    id: "ToAST", name: "Tower of Annoyingly Simple Trials", floors: 10, difficulty: "Effortless", 
+    floorColors: ["#ee2222","#ee9922","#eec822","#56c822","#09d787","#49c7dc","#3885e6","#b546d6","#ff76b9","#f7f7f7"],
+    layout: [], // Will fill per-floor
   },
-  // Tower of Killjoys (ToK): Mid-level
-  {
-    id: "ToK", name: "Tower of Killjoys",
-    palette: ["#e8905f","#ffe073","#f7c780","#44270a"],
-    floors: [
-      [
-        {x:60, y:0, w:220, h:18},
-        {x:320, y:60, w:180, h:16}, // F2
-        {x:120, y:120, w:140, h:16},
-        {x:340, y:180, w:110, h:14},
-        {x:60, y:240, w:320, h:14}, // F5
-        {x:210, y:300, w:180, h:14},
-        {x:128, y:360, w:230, h:12},
-        {x:60, y:420, w:100, h:16},
-        {x:220, y:480, w:241, h:13},
-        {x:70, y:540, w:340, h:16},
-      ],
-      [
-        {x:210, y:480, w:100, h:7, f:9},
-        {x:350, y:120, w:30, h:7, f:3}
-      ]
-    ],
-    intro: "A wide range of platforms and a couple of nasty hazard patches with basic timing puzzles and a push block.",
-    totalFloors: 10,
-    pushBlocks: [
-      {x:200, y:181, w:30, h:30, minX:70, maxX:370, f:4, targetBtn:0}
-    ],
-    buttons: [
-      {x:150, y:306, f:6, target:0} // Triggers moving platform for a period
-    ]
+  { id: "ToA", name: "Tower of Anger", floors: 10, difficulty: "Medium",
+    floorColors: ["#e86929","#f7b439","#e0dd28","#a4d91c","#46ca7d","#39c8ba","#2a7be3","#7d3fd1","#fa32a4","#eee"],
+    layout: [],
   },
-  // Citadel of Laptop Splitting (CoLS): Long, advanced, multiple mechanics
-  {
-    id: "CoLS", name: "Citadel of Laptop Splitting",
-    palette: ["#7FDDC9","#1A3944","#BFE6E4","#17392E"],
-    floors: [
-      // 15 floors (unrolled for brevity, demo 10)
-      [
-        {x:60, y:0, w:340, h:18},
-        {x:60, y:60, w:150, h:16},
-        {x:270, y:120, w:180, h:16},
-        {x:100, y:180, w:140, h:16},
-        {x:60, y:240, w:170, h:16},
-        {x:240, y:300, w:160, h:15},
-        {x:80, y:360, w:120, h:14},
-        {x:320, y:420, w:110, h:13},
-        {x:80, y:480, w:340, h:14},
-        {x:190, y:540, w:210, h:13}
-      ],
-      [
-        {x:250, y:60, w:40, h:7, f:2},
-        {x:150, y:360, w:80, h:8, f:7}
-      ]
-    ],
-    intro: "A daunting citadel with more floors, tricky moving objects, advanced puzzles and multi-part segments.",
-    totalFloors: 15,
-    movingPlatforms: [
-      {from:{x:100,y:180}, to:{x:340,y:180}, w:60, h:16, spd:1.1, f:4, loop:true}
-    ],
-    spinners: [
-      {cx:220, cy:360, r:50, len:90, speed:0.03, f:7}
-    ],
-    buttons: [
-      {x:150, y:546, f:10, target:0}, // unlock upper push block
-    ]
-  }
+  { id: "ToM", name: "Tower of Madness", floors: 10, difficulty: "Difficult",
+    floorColors: ["#a736b5","#b546d6","#495dda","#508be6","#39c8ba","#21c27b","#46ca7d","#a4d91c","#e0dd28","#eee"],
+    layout: [],
+  },
+  { id: "ToNI", name: "Tower of Noticeable Infuriation", floors: 10, difficulty: "Medium",
+    floorColors: ["#f09819","#ed6ea0","#fcb045","#ef9d43","#fe9c00","#f95800","#f1004b","#c800ee","#007afc","#fff"],
+    layout: [],
+  },
+  { id: "ToH", name: "Tower of Hecc", floors: 10, difficulty: "Hard",
+    floorColors: ["#aa007f","#7112a6","#591f7d","#391e47","#684455","#bc5779","#ec7d9f","#e6b1d0","#f8d4e4","#f7f7f7"],
+    layout: [],
+  },
+  { id: "ToK", name: "Tower of Killjoys", floors: 10, difficulty: "Challenging",
+    floorColors: ["#2be0d5","#07e166","#2ad145","#70d81e","#c9e221","#e6e23f","#e6b01f","#e67a1f","#e63f57","#c3002f"],
+    layout: [],
+  },
+  { id: "ToKY", name: "Tower of Keyboard Yeeting", floors: 10, difficulty: "Difficult",
+    floorColors: ["#58bdad","#39c8ba","#46ca7d","#7de63f","#bedc2d","#fff93f","#e6b01f","#f9b331","#b9832c","#45331e"],
+    layout: [],
+  },
+  { id: "ToS", name: "Tower of Stress", floors: 10, difficulty: "Remorseless",
+    floorColors: ["#df2b2b","#e6453f","#e67a1f","#e6b01f","#ecdc2a","#dcf829","#81e258","#39e384","#28d5a6","#4d8ae9"],
+    layout: [],
+  },
+  { id: "ToSP", name: "Tower of Screen Punching", floors: 9, difficulty: "Intense",
+    floorColors: ["#803432","#db363d","#b8001a","#ff1d58","#f75990","#fa9dbd","#e2cfbc","#b3b2b7","#ab9bbb"],
+    layout: [],
+  },
+  { id: "ToR", name: "Tower of Rage", floors: 10, difficulty: "Remorseless",
+    floorColors: ["#d93737","#f27630","#fbc84d","#79c267","#3256a8","#7e65b5","#745d92","#b76daf","#ef4271","#eeeeee"],
+    layout: [],
+  },
+  { id: "ToIE", name: "Tower of Impossible Expectations", floors: 10, difficulty: "Intense",
+    floorColors: ["#012459","#005985","#02a8d3","#00cfff","#00e7fe","#15b1da","#0089ba","#005985","#012459","#f7f7f7"],
+    layout: [],
+  },
+  { id: "ToTS", name: "Tower of True Skill", floors: 10, difficulty: "Insane (Soul Crush)",
+    floorColors: ["#ffda3e","#f6c62c","#f7b42c","#ff9e25","#ff7727","#f04900","#ed3652","#8c2158","#6d2c70","#f7f7f7"],
+    layout: [],
+  },
+  { id: "TT", name: "Thanos Tower", floors: 10, difficulty: "Extreme (Soul Crush)",
+    floorColors: ["#810f6f","#8e2ba7","#5c2483","#322d78","#2e4bad","#544cb7","#7597c9","#b9f2ff","#decbe4","#fff"],
+    layout: [],
+  },
+  { id: "CoLS", name: "Citadel of Laptop Splitting", floors: 15, difficulty: "Intense",
+    floorColors: ["#2e5266","#6e8898","#9fb1bc","#ced3dc","#b5c6b8","#6e8898","#4f5d75","#616283","#c2b9b0","#e5e5e5","#a3bbc8","#212b36","#324a5f","#457eac","#f7f7f7"],
+    layout: [],
+  },
 ];
 
-/*------------------- Button/Control Bindings -------------------*/
-// Player 1: WASD, Left Shift
-const P1_KEYS = { left:'a', right:'d', jump:'w', down:'s', action:'Shift' };
-// Player 2: Arrow keys, Right Shift
-const P2_KEYS = { left:'ArrowLeft', right:'ArrowRight', jump:'ArrowUp', down:'ArrowDown', action:'/' };
-
-/************************************************
-|-------------- Classes & Structures ------------|
-************************************************/
-
-// Timed Effect Constants
-const EFFECTS = {
-  NONE: { speed: 1, jump: 1, canJump: true },
-  SLOW: { speed: 0.6, jump: 0.75, canJump: true },
-  HIJUMP: { speed: 1, jump: 1.5, canJump: true },
-  NOJUMP: { speed: 1, jump: 0.5, canJump: false }
+// Utility for picking a random tower
+function randomTower() {
+  const idx = Math.floor(Math.random() * TOWER_LIST.length);
+  return JSON.parse(JSON.stringify(TOWER_LIST[idx])); // Deep copy
 }
 
-// Timer helper 
-function Timer(duration) {
-  let t = 0, running = false;
-  return {
-    start: () => { t = 0; running = true; },
-    stop: () => { running = false; },
-    tick: dt => { if(running) t += dt; },
-    done: () => t >= duration,
-    time: () => t
-  }
+// *** Constants ***
+const CANVAS_W = 1280, CANVAS_H = 720;
+const BASE_FLOOR_HEIGHT = 140; // px per floor in world units
+const PLATFORM_COUNT_MIN = 30, PLATFORM_COUNT_MAX = 40; // per floor
+
+// Player setup
+const PLAYER_TEMPLATE = [
+  { nickname: "Player 1", controls: { left: "a", right: "d", jump: "w" }, color: "#f53153" },
+  { nickname: "Player 2", controls: { left: "ArrowLeft", right: "ArrowRight", jump: "ArrowUp" }, color: "#419bf9" }
+];
+
+// Game state
+let currentTower;
+let gameState = "cutscene"; // cutscene | play | win
+let timerStart = null, completionTimes = [null, null];
+let splitScreen = false;
+let platformer;
+let cutsceneZoom = 1.5, cutsceneTimer = 0;
+let winPads = [];
+let winningPlayers = [false, false];
+let healthUI = [100, 100];
+
+// *** Helper: Color mapping ***
+
+function lerp(a,b,t) { return a + (b - a) * t; }
+function clamp(v,a,b) { return v < a ? a : v > b ? b : v; }
+function choose(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
+function colorHexLerp(color1, color2, t) {
+  const c1 = parseInt(color1.slice(1),16);
+  const c2 = parseInt(color2.slice(1),16);
+  const r1=(c1>>16)&0xFF, g1=(c1>>8)&0xFF, b1=c1&0xFF;
+  const r2=(c2>>16)&0xFF, g2=(c2>>8)&0xFF, b2=c2&0xFF;
+  const r=lerp(r1,r2,t)|0,g=lerp(g1,g2,t)|0,b=lerp(b1,b2,t)|0;
+  return "#"+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1);
 }
 
-// Player Structure
-class Player {
-  constructor(idx, spawn) {
-    this.idx = idx;
-    this.x = spawn.x;
-    this.y = spawn.y;
-    this.vx = 0;
-    this.vy = 0;
-    this.hp = PLAYER_MAX_HP;
-    this.maxHp = PLAYER_MAX_HP;
-    this.regenTimer = 0;
-    this.onGround = false;
-    this.effect = {...EFFECTS.NONE};
-    this.effectTimer = 0;
-    this.color = PLAYER_COLORS[idx];
-    this.lastSafe = {...spawn}; // checkpoint
-    this.name = PLAYER_NAMES[idx];
-    this.controls = idx === 0 ? P1_KEYS : P2_KEYS;
-    this.held = {}; // input keys
-    this.score = 0;
-    this.winState = false;
-  }
-  applyEffect(e, dur) {
-    this.effect = {...e};
-    this.effectTimer = dur || 0;
-  }
-  updateEffect(dt) {
-    if(this.effectTimer > 0){
-      this.effectTimer -= dt;
-      if(this.effectTimer <= 0) this.effect = {...EFFECTS.NONE};
-    }
-  }
-  tickRegen(dt) {
-    if(this.hp < this.maxHp && this.regenTimer <= 0){
-      this.hp = clamp(this.hp + HP_REGEN * dt, 0, this.maxHp);
-    }
-    if(this.regenTimer > 0) this.regenTimer -= dt;
-  }
-  hurt(amt) {
-    if(this.hp > 0) {
-      this.hp = clamp(this.hp - amt, 0, this.maxHp);
-      this.regenTimer = 1.75; // 1.75s before start regen
-    }
-  }
-  reset(spawn) {
-    this.x = spawn.x; this.y = spawn.y;
-    this.vx = this.vy = 0;
-    this.hp = this.maxHp;
-    this.effect = {...EFFECTS.NONE};
-    this.winState = false;
-    this.lastSafe = {...spawn};
-  }
-}
-
-/*------------------- Game Entities -------------------*/
-// Platform, Hazard, MovingPlatform, Button, Spinner, PushableBlock structs
-class Platform {
-  constructor(x, y, w, h) { this.x = x; this.y = y; this.w = w; this.h = h; }
-}
-class Hazard {
-  constructor(x, y, w, h) { this.x = x; this.y = y; this.w = w; this.h = h; }
-}
-class ButtonEntity {
-  constructor(x, y, floorIdx, targetIdx) {
-    this.x = x; this.y = y; this.floorIdx = floorIdx;
-    this.targetIdx = targetIdx; // index in linked platforms
-    this.pressed = false; this.timer = 0;
-  }
-}
-class MovingPlatform {
-  constructor(from, to, w, h, spd, floorIdx, loop) {
-    this.from = {...from}; this.to = {...to}; this.w = w; this.h = h;
-    this.spd = spd; this.t = 0; this.dir = 1; this.loop = loop; this.floorIdx = floorIdx;
-    this.active = true;
-  }
-  get pos(){
-    return {
-      x: lerp(this.from.x, this.to.x, this.t),
-      y: this.from.y,
-      w: this.w, h: this.h
-    };
-  }
-  update(dt) {
-    if(!this.active) return;
-    this.t += dt * this.spd * this.dir;
-    if(this.t > 1) { if(this.loop) {this.t = 1; this.dir = -1;} else {this.t = 1; this.active = false;}}
-    if(this.t < 0) { if(this.loop) {this.t = 0; this.dir = 1;} else {this.t = 0; this.active = false;}}
-  }
-  reset() { this.t = 0; this.dir = 1; this.active = true; }
-}
-class Spinner {
-  constructor(cx, cy, radius, len, speed, floorIdx) {
-    this.cx = cx; this.cy = cy; this.r = radius; this.len = len; this.spd = speed;
-    this.floorIdx = floorIdx;
-    this.ang = 0;
-  }
-  update(dt) { this.ang += this.spd*dt*60; }
-}
-class PushBlock {
-  constructor(x, y, w, h, minX, maxX, floorIdx, targetBtn) {
-    this.x = x; this.y = y; this.w = w; this.h = h;
-    this.minX = minX; this.maxX = maxX; this.floorIdx = floorIdx; this.targetBtn = targetBtn;
-    this.vx = 0;
-  }
-  update(dt){
-    if(Math.abs(this.vx) > 0.01) this.x += this.vx*dt*60, this.vx *= 0.92;
-  }
-}
-class TimedEffectTrigger {
-  constructor(x, y, w, h, floorIdx, effect, duration){
-    this.x = x; this.y = y; this.w = w; this.h = h;
-    this.floorIdx = floorIdx; this.effect = effect;
-    this.duration = duration;
-  }
-}
-
-/*------------------- Level Loader and Logic -------------------*/
-class Level {
-  constructor(preset){
-    this.id = preset.id; this.name = preset.name;
-    this.palette = preset.palette;
-    this.intro = preset.intro;
-    this.totalFloors = preset.totalFloors;
-    this.platforms = []; this.hazards = [];
-    this.buttons = [], this.movingPlatforms = [];
-    this.spinners = [], this.pushBlocks = [];
-    this.effectTriggers = [];
-    
-    // Load platforms and hazards, offset for floor stacking
-    let [plats, hazards] = preset.floors;
-    for(let i=0; i < plats.length; ++i){
-      let pf = plats[i];
-      let fy = FLOOR_HEIGHT * i;
-      this.platforms.push(new Platform(pf.x, fy + pf.y, pf.w, pf.h));
-    }
-    if(hazards) for(const hz of hazards) {
-      let fy = hz.f !== undefined ? FLOOR_HEIGHT * (hz.f-1) : 0;
-      this.hazards.push(new Hazard(hz.x, fy + hz.y, hz.w, hz.h));
-    }
-    // Optional: moving platforms
-    if(preset.movingPlatforms){
-      for(const mp of preset.movingPlatforms){
-        let fy = mp.f !== undefined ? FLOOR_HEIGHT*(mp.f-1) : 0;
-        this.movingPlatforms.push(new MovingPlatform(mp.from, mp.to, mp.w, mp.h, mp.spd, mp.f, mp.loop));
+// *** Tower generator: authentic structure w/ color and mechanics ***
+function generateTowerLayout(tower, platformCount=PLATFORM_COUNT_MIN) {
+  // For demo, use simple platforms, moving, lava, buttons and special per-floor effect.
+  for (let f=0; f<tower.floors; ++f) {
+    let floor = [];
+    const color = tower.floorColors[f % tower.floorColors.length] || "#bbb";
+    // Static platforms
+    for (let i=0; i<platformCount; ++i) {
+      // Each platform spans variable width, height aligned for variety
+      let width = 60 + Math.random() * 60, height = 15 + Math.random()*10;
+      let x = 60 + Math.random() * (CANVAS_W-180-width);
+      let y = f * BASE_FLOOR_HEIGHT + lerp(10, BASE_FLOOR_HEIGHT-30, i/platformCount);
+      // Floor boundaries: always add platforms to sides
+      if(i<2) x = i==0?30:CANVAS_W-width-30;
+      let kind = "platform";
+      // 1 in 8: moving platform
+      if (Math.random() < 0.12) {
+        kind = "moving";
       }
-    }
-    if(preset.spinners){
-      for(const sp of preset.spinners){
-        let fy = sp.f !== undefined ? FLOOR_HEIGHT*(sp.f-1) : 0;
-        this.spinners.push(new Spinner(sp.cx, fy + sp.cy, sp.r, sp.len, sp.speed, sp.f));
+      // 1 in 14: spinner
+      else if (Math.random() < 0.07) {
+        kind = "spinner";
       }
-    }
-    if(preset.buttons){
-      for(const btn of preset.buttons){
-        let fy = btn.f !== undefined ? FLOOR_HEIGHT*(btn.f-1) : 0;
-        this.buttons.push(new ButtonEntity(btn.x, fy + btn.y, btn.f, btn.target));
+      else if (Math.random() < 0.07) {
+        kind = "lava";
+        width = 45+(Math.random()*30);
+        height = 13+(Math.random()*5);
       }
-    }
-    if(preset.pushBlocks){
-      for(const pb of preset.pushBlocks){
-        let fy = pb.f !== undefined ? FLOOR_HEIGHT*(pb.f-1) : 0;
-        this.pushBlocks.push(new PushBlock(pb.x, fy + pb.y, pb.w, pb.h, pb.minX, pb.maxX, pb.f, pb.targetBtn));
+      // 1 in 20: button
+      else if (Math.random() < 0.05) {
+        kind = "button";
+        width = 25; height = 12;
       }
+      // 1 in 16: timed effect block
+      else if (Math.random() < 0.07) {
+        kind = choose(['nojump','hijump','slow']);
+        width = 32; height = 16;
+      }
+      floor.push({ x,y,width,height,kind,color });
     }
-    // For demonstration: install a random effect zone
-    this.effectTriggers.push(new TimedEffectTrigger(90, 420, 42, 20, 8, EFFECTS.SLOW, 2));
-    // Win Pad at top
-    const lastPlat = this.platforms[this.platforms.length-1];
-    this.winPad = {x: lastPlat.x + lastPlat.w - 54, y: lastPlat.y - 30, w:42, h:16};
-    // Spawn locations per player
-    this.p1Spawn = {x: 75, y: 8}; this.p2Spawn = {x: 105, y: 8};
-    this.offsetY = FLOOR_HEIGHT * (this.platforms.length-1);
+    // Extra: Main up-vertical platform (so all jumps are possible)
+    floor.push({ x: CANVAS_W/2-40, y:f*BASE_FLOOR_HEIGHT+BASE_FLOOR_HEIGHT-30, width:80, height:16, kind:"platform", color });
+    tower.layout.push(floor);
   }
+  // Add win pad at the top
+  tower.winPad = { x: CANVAS_W/2-45, y: (tower.floors)*BASE_FLOOR_HEIGHT-60, width: 90, height:24, color: "#fffa23" };
+  return tower;
 }
 
-/*------------------- Camera Management -------------------*/
-class Camera {
-  constructor(){ this.x = 0; this.y = 0; }
-  set(x, y){ this.x = x; this.y = y; }
-  lerpTo(x, y, amt){
-    this.x = lerp(this.x, x, amt);
-    this.y = lerp(this.y, y, amt);
-  }
-  // Camera restricts over tower bounds
-  static clampY(y){
-    return clamp(y, 0, (FLOOR_HEIGHT*MAX_FLOORS)-(C_HEIGHT-160));
-  }
+
+function platformColorForKind(kind, baseColor) {
+  if(kind=='lava') return '#e24c3b';
+  if(kind=='moving') return colorHexLerp(baseColor,'#3be2be',0.3);
+  if(kind=='spinner') return colorHexLerp(baseColor,'#7351a6',0.3);
+  if(kind=='button') return '#24b5ff';
+  if(kind=='nojump') return '#2a485e';
+  if(kind=='hijump') return '#cdea14';
+  if(kind=='slow') return '#9458e8';
+  return baseColor;
 }
 
-/*------------------- Main Game Controller -------------------*/
-class Game {
-  constructor(){
-    this.players = [];
-    this.level = null;
-    this.state = "intro"; // "cutscene", "play", "win"
-    this.towerList = [];
-    this.selectedTowerIdx = 0;
-    this.timer = 0;
-    this.cameras = [new Camera(), new Camera()];
-    this.splitMode = false;
-    this.splitTransition = 0; // 0=none, 1=full split
-    this.winnerIdx = -1;
-  }
-  /*----- Initialization -----*/
-  init(){
-    // Build list, randomize tower
-    this.towerList = [...TOWER_PRESETS];
-    this.selectedTowerIdx = Math.floor(Math.random()*this.towerList.length);
-    this.level = new Level(this.towerList[this.selectedTowerIdx]);
-    // Build players
+
+// *** Platformer core logic ***
+class PlatformerGame {
+  constructor(towerDesc) {
+    this.tower = towerDesc;
     this.players = [
-      new Player(0, this.level.p1Spawn),
-      new Player(1, this.level.p2Spawn)
+      this.createPlayer(0,this.spawnPoint(0)),
+      this.createPlayer(1,this.spawnPoint(1))
     ];
-    // Place camera at base for intro
-    this.cameras[0].set(0, this.level.platforms[0].y - 50);
-    this.cameras[1].set(0, this.level.platforms[0].y - 50);
-    this.timer = 0;
-    this.state = "cutscene";
-    this.winnerIdx = -1;
-    uiOverlay.innerHTML = "";
-    // Listen for key events
-    this.clearInputs();
+    this.keys = {};
+    this.cameras = [{},{},{},{}]; // Support up to 2 cameras if splitscreen
+    this.won = [false,false];
+    this.platformEffect = [{},{},{}]; // per player timed effect
+    this.lastLavaHit = [0,0];
+    this.lastButton = [null,null];
   }
-  clearInputs(){
-    for(const p of this.players) p.held = {};
-  }
-  /*----- Main Game Loop -----*/
-  update(dt){
-    if(this.state === "cutscene"){
-      this.cutsceneAnim(dt);
-      return;
-    }
-    if(this.state === "win") return;
-    // Move platforms
-    for(let mp of this.level.movingPlatforms) mp.update(dt);
-    for(let sp of this.level.spinners) sp.update(dt);
-    for(let pb of this.level.pushBlocks) pb.update(dt);
-
-    // Player physics & input
-    for(let i=0; i<2; ++i){
-      this.updatePlayer(i, dt);
-    }
-    // Check for split-screen
-    let y0 = this.players[0].y, y1 = this.players[1].y;
-    if(Math.abs(y0 - y1) > SPLIT_DIST) this.splitMode = true;
-    else this.splitMode = false;
-    // Win Pad Detection
-    for(let i=0; i<2; ++i){
-      const p = this.players[i], pad = this.level.winPad;
-      if(aabb(p.x, p.y, PLAYER_WIDTH, PLAYER_HEIGHT, pad.x, pad.y, pad.w, pad.h)){
-        this.state = "win"; this.winnerIdx = i;
-        setTimeout(()=>this.showWinner(i), 400);
-        break;
-      }
-    }
-  }
-  /*----- Player Update (Physics, Collisions, Triggers) -----*/
-  updatePlayer(idx, dt){
-    const p = this.players[idx];
-    p.updateEffect(dt);
-    // Input movement
-    let mv = 0;
-    if(p.held[p.controls.left]) mv -= 1;
-    if(p.held[p.controls.right]) mv += 1;
-    p.vx = mv * MOVE_SPD * (p.effect.speed || 1);
-    // Jump
-    if(!p.jumpLock && p.held[p.controls.jump] && p.onGround && (p.effect.canJump !== false)){
-      p.vy = -JUMP_PWR * (p.effect.jump || 1);
-      p.onGround = false;
-      p.jumpLock = true;
-    }
-    if(!p.held[p.controls.jump]) p.jumpLock = false;
-    // Gravity
-    p.vy += GRAVITY;
-    // Next position
-    let nx = p.x + p.vx; let ny = p.y + p.vy;
-    // Collision with moving platforms (if standing), add platform velocity
-    let bent = null;
-    for(const mp of this.level.movingPlatforms){
-      let mpp = mp.pos;
-      if(aabb(p.x, p.y+PLAYER_HEIGHT, PLAYER_WIDTH, 4, mpp.x, mpp.y, mpp.w, mpp.h)){
-        if(p.vy >= 0) bent = mp;
-        break;
-      }
-    }
-    if(bent) nx += (bent.pos.x - bent.from.x), ny += (bent.pos.y - bent.from.y);
-    // Platform collision
-    p.onGround = false;
-    for(const plat of this.level.platforms.concat(this.level.movingPlatforms.map(mp=>mp.pos))){
-      // Downwards land
-      if(p.vy >= 0 && aabb(nx, ny+PLAYER_HEIGHT, PLAYER_WIDTH, 2, plat.x, plat.y, plat.w, plat.h)){
-        // Landed
-        ny = plat.y - PLAYER_HEIGHT;
-        p.vy = 0;
-        p.onGround = true;
-      }
-      // Hit head
-      else if(p.vy < 0 && aabb(nx, ny, PLAYER_WIDTH, 2, plat.x, plat.y+plat.h-2, plat.w, 2)){
-        p.vy = 0;
-      }
-    }
-    // Stop at sides of platforms (basic, can enhance to AABB moving-collision if needed)
-    for(const plat of this.level.platforms.concat(this.level.movingPlatforms.map(mp=>mp.pos))){
-      if(aabb(nx, ny, PLAYER_WIDTH, PLAYER_HEIGHT, plat.x-2, plat.y, 2, plat.h)){
-        nx = plat.x - PLAYER_WIDTH;
-      }
-      if(aabb(nx, ny, PLAYER_WIDTH, PLAYER_HEIGHT, plat.x+plat.w, plat.y, 2, plat.h)){
-        nx = plat.x + plat.w + 1;
-      }
-    }
-    // Clamp world bounds
-    nx = clamp(nx, 0, C_WIDTH-PLAYER_WIDTH-12);
-    // Respawn if below world
-    if(ny > (FLOOR_HEIGHT*this.level.platforms.length+150)){
-      nx = this.level.p1Spawn.x + 10*idx; ny = this.level.p1Spawn.y;
-    }
-    // Hazards
-    for(const hz of this.level.hazards){
-      if(aabb(nx, ny, PLAYER_WIDTH, PLAYER_HEIGHT, hz.x, hz.y, hz.w, hz.h)){
-        p.hurt(HAZARD_DMG);
-      }
-    }
-    p.x = nx; p.y = ny;
-    // Pick up safe point (platform ground)
-    for(const plat of this.level.platforms){
-      if(aabb(p.x, p.y+PLAYER_HEIGHT+1, PLAYER_WIDTH, 1, plat.x, plat.y, plat.w, plat.h)){
-        p.lastSafe = {x: p.x, y: plat.y - PLAYER_HEIGHT};
-      }
-    }
-    // Buttons (activate when colliding)
-    for(const btn of this.level.buttons){
-      if(!btn.pressed && btn.floorIdx && aabb(p.x, p.y, PLAYER_WIDTH, PLAYER_HEIGHT, btn.x, btn.y, 20, 18)){
-        btn.pressed = true; btn.timer = 1.5;
-        // Activate assigned moving platform or trigger
-        let tgt = this.level.movingPlatforms[btn.target];
-        if(tgt) tgt.reset();
-      }
-    }
-    for(const btn of this.level.buttons){
-      if(btn.pressed) { btn.timer -= dt; if(btn.timer <= 0) btn.pressed = false; }
-    }
-    // Push blocks
-    for(const b of this.level.pushBlocks){
-      if(aabb(p.x, p.y, PLAYER_WIDTH, PLAYER_HEIGHT, b.x-3, b.y, b.w+6, b.h)){
-        let dir = (p.x + PLAYER_WIDTH/2 > b.x + b.w/2) ? 1 : -1;
-        b.vx = dir*1.3;
-        b.x = clamp(b.x + dir*2, b.minX, b.maxX);
-      }
-    }
-    // Effect triggers (apply if collision)
-    for(const ef of this.level.effectTriggers){
-      if(aabb(p.x, p.y, PLAYER_WIDTH, PLAYER_HEIGHT, ef.x, ef.y, ef.w, ef.h)){
-        p.applyEffect(ef.effect, ef.duration);
-      }
-    }
-    // Spinners (hurt on touch, knockback)
-    for(const sp of this.level.spinners){
-      let sx = sp.cx + sp.r*Math.cos(sp.ang), sy = sp.cy + sp.r*Math.sin(sp.ang);
-      let ax = sx, ay = sy, aw = sp.len, ah = 8;
-      if(aabb(p.x, p.y, PLAYER_WIDTH, PLAYER_HEIGHT, ax, ay, aw, ah)){
-        p.hurt(HAZARD_DMG);
-        p.vx -= Math.cos(sp.ang)*3;
-        p.vy -= Math.sin(sp.ang)*2.2;
-      }
-    }
-    // Timed status effect decay & hp regen
-    p.updateEffect(dt);
-    p.tickRegen(dt);
-  }
-  /*----- Cutscene Animation -----*/
-  cutsceneAnim(dt){
-    // Camera pans base to top, then slides title, waits, shows intro, fades to play
-    this.timer += dt;
-    let t = clamp(this.timer/3, 0, 1);
-    let baseY = this.level.platforms[0].y - 50, topY = this.level.platforms[this.level.platforms.length-1].y - 60;
-    let targetY = lerp(baseY, topY, easeInOutQuad(t));
-    for(let cam of this.cameras) cam.y = targetY;
-    // Fade in tower name
-    ctx.globalAlpha = Math.min(t*1.2,1);
-    ctx.fillStyle = this.level.palette[0] || "#FFF";
-    ctx.font = "58px Segoe UI, Arial";
-    ctx.fillText(this.level.name, C_WIDTH/2-ctx.measureText(this.level.name).width/2, C_HEIGHT/2-68);
-    ctx.font = "22px Segoe UI";
-    ctx.globalAlpha = Math.min((t-0.6)*2.5,1);
-    ctx.fillStyle = "#FFF";
-    ctx.fillText(this.level.intro, C_WIDTH/2-ctx.measureText(this.level.intro).width/2, C_HEIGHT/2-24);
-    ctx.globalAlpha = 1;
-    // Wait, then start gameplay
-    if(this.timer > 3.6){
-      this.state = "play";
-      for(let i=0; i<2; ++i) this.cameras[i].set(this.players[i].x-100, Camera.clampY(this.players[i].y-240));
-      setTimeout(()=> {uiOverlay.innerHTML=
-        "Controls: <b>A/D/W</b> + Shift (P1), <b>←/→/↑</b> + / (P2).<br> Touch the Win Pad at the very top to win!";}, 300);
-    }
-  }
-  /*----- Drawing Logic -----*/
-  draw(){
-    // Render game. If split, render 2 viewports; else, single median camera
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    // Set sky gradient
-    let g = ctx.createLinearGradient(0,0,0,C_HEIGHT);
-    g.addColorStop(0, this.level.palette[0]); g.addColorStop(1, this.level.palette[1]);
-    ctx.fillStyle = g; ctx.fillRect(0,0,C_WIDTH,C_HEIGHT);
-    // Single or Split?
-    if(this.splitMode){
-      // Top: Player 1; Bottom: Player 2
-      for(let i=0; i<2; ++i){
-        let cam = this.cameras[i];
-        ctx.save();
-        // Mask half canvas
-        ctx.beginPath();
-        if(i==0) ctx.rect(0,0,C_WIDTH,C_HEIGHT/2+2);
-        else ctx.rect(0,C_HEIGHT/2-2,C_WIDTH,C_HEIGHT/2+4);
-        ctx.clip();
-        ctx.translate(-cam.x, -cam.y+(i==0?0:-C_HEIGHT/2));
-        this.drawLevel(cam);
-        for(let j=0; j<2; ++j){
-          if(j==i) this.drawPlayer(j);
-        }
-        ctx.restore();
-        // Divider
-        ctx.strokeStyle = "#DEF";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(0, C_HEIGHT/2); ctx.lineTo(C_WIDTH, C_HEIGHT/2);
-        ctx.stroke();
-      }
-    } else {
-      // Both players in same camera
-      let mx = (this.players[0].x + this.players[1].x)/2 - C_WIDTH/2 + 80;
-      let my = (this.players[0].y + this.players[1].y)/2 - C_HEIGHT/2 + 120;
-      mx = clamp(mx, 0, C_WIDTH-480); my = Camera.clampY(my);
-      ctx.save();
-      ctx.translate(-mx, -my);
-      this.drawLevel({x:mx, y:my});
-      for(let i=0; i<2; ++i) this.drawPlayer(i);
-      ctx.restore();
-    }
-    this.drawUI();
-  }
- 
-  drawLevel(cam){
-    // Draw platforms
-    for(const plat of this.level.platforms){
-      ctx.fillStyle = this.level.palette[2];
-      ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-    }
-    // Hazards
-    for(const hz of this.level.hazards){
-      ctx.fillStyle = "#FF3678";
-      ctx.fillRect(hz.x, hz.y, hz.w, hz.h);
-    }
-    // Win Pad
-    const pad = this.level.winPad;
-    ctx.fillStyle = "#6AFFA1";
-    ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
-    ctx.font = "bold 15px Segoe UI"; ctx.fillStyle = "#234";
-    ctx.fillText("WIN", pad.x+pad.w/2-14, pad.y+13);
-    // Buttons
-    for(const btn of this.level.buttons){
-      ctx.fillStyle = btn.pressed ? "#FFD94B" : "#FEE568";
-      ctx.fillRect(btn.x, btn.y, 20, 18);
-      ctx.font="11px Segoe UI"; ctx.fillStyle="#234";
-      ctx.fillText("BTN", btn.x+2, btn.y+12);
-    }
-    // Moving platforms
-    for(const mp of this.level.movingPlatforms){
-      let pos = mp.pos;
-      ctx.fillStyle = "#FAFD94"; ctx.fillRect(pos.x, pos.y, pos.w, pos.h);
-    }
-    // Spinners
-    for(const sp of this.level.spinners){
-      let theta = sp.ang, sx = sp.cx + sp.r*Math.cos(theta), sy = sp.cy + sp.r*Math.sin(theta);
-      ctx.save();
-      ctx.strokeStyle = "#86d"; ctx.lineWidth = 5.5;
-      ctx.beginPath(); ctx.moveTo(sp.cx, sp.cy); ctx.lineTo(sx + sp.len, sy); ctx.stroke();
-      ctx.beginPath(); ctx.arc(sp.cx, sp.cy, 12, 0, Math.PI*2); ctx.stroke();
-      ctx.restore();
-    }
-    // Push blocks
-    for(const b of this.level.pushBlocks){
-      ctx.fillStyle = "#B86E2C"; ctx.fillRect(b.x, b.y, b.w, b.h);
-    }
-    // Effect triggers
-    for(const ef of this.level.effectTriggers){
-      ctx.globalAlpha = 0.3;
-      ctx.fillStyle = "#5AFECD"; ctx.fillRect(ef.x, ef.y, ef.w, ef.h);
-      ctx.globalAlpha = 1;
-    }
-    // Floor number marker
-    let y0 = cam.y - 80; let topY = cam.y + C_HEIGHT + 80;
-    for(let i=0; i < this.level.platforms.length; ++i){
-      let pf = this.level.platforms[i];
-      if(pf.y > y0 && pf.y < topY){
-        ctx.font = "bold 17px Segoe UI"; ctx.fillStyle = "#234";
-        ctx.fillText("F"+(i+1), pf.x-50, pf.y+12);
-      }
-    }
-  }
-  drawPlayer(idx){
-    // Draw player rectangle, face, and info
-    let p = this.players[idx];
-    ctx.save();
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x, p.y, PLAYER_WIDTH, PLAYER_HEIGHT);
-    // Face
-    ctx.fillStyle = "#fff"; ctx.beginPath();
-    ctx.arc(p.x+PLAYER_WIDTH/2, p.y+PLAYER_HEIGHT/2, 8, 0, Math.PI*2);
-    ctx.fill();
-    ctx.restore();
-    // Username, HP bar
-    ctx.font = "15px Segoe UI";
-    ctx.fillStyle = p.color;
-    ctx.fillText(p.name, p.x-2, p.y-7);
-    ctx.strokeStyle="#234";
-    ctx.strokeRect(p.x-2, p.y+PLAYER_HEIGHT+3, PLAYER_WIDTH+4, 9);
-    ctx.fillStyle="#2ED3B8";
-    ctx.fillRect(p.x-2, p.y+PLAYER_HEIGHT+3, (PLAYER_WIDTH+4)*p.hp/p.maxHp, 9);
-  }
-  drawUI(){
-    // HP bars, effects, floor, winner overlay
-    let html = "";
-    for(let i=0; i<2; ++i){
-      let p=this.players[i];
-      html += `<span style='color:${p.color}'>${p.name}: ${Math.round(p.hp)} HP</span>`;
-      if(p.effect !== EFFECTS.NONE) html += ` <span style="color:#AFC">${Object.keys(EFFECTS).find(key=>EFFECTS[key]==p.effect)}</span>`;
-      html += " | ";
-    }
-    html += `<span style="color:#BFD">Tower: <b>${this.level.name}</b></span>`;
-    if(this.state === "win" && this.winnerIdx !== -1){
-      html += `<div style="font-size:47px;color:#6AFFA1;text-shadow:1px 1px 12px #234">🏆 ${PLAYER_NAMES[this.winnerIdx]} WINS! 🏆</div>`;
-      html += `<button class="button" onclick="location.reload()">Play again</button>`;
-    }
-    uiOverlay.innerHTML = html;
-  }
-  /*----- Winner Logic -----*/
-  showWinner(i){
-    uiOverlay.innerHTML += `<br><span style="font-size:24px;">Press <b>Play again</b> to start a new round.</span>`;
-  }
-}
-
-/************************************************
-|-------------- Input System ------------|
-************************************************/
-const keyState = {};
-window.addEventListener('keydown', e=>{
-  keyState[e.key] = true;
-});
-window.addEventListener('keyup', e=>{
-  keyState[e.key] = false;
-});
-canvas.addEventListener("blur", ()=>Object.keys(keyState).forEach(k=>delete keyState[k]));
-
-/*----- Assign to player held keys in updateInputs -----*/
-function updateInputs(game){
-  for(let i=0;i<2;++i){
-    let p = game.players[i];
-    let ctl = p.controls;
-    p.held = {
-      [ctl.left]: keyState[ctl.left],
-      [ctl.right]: keyState[ctl.right],
-      [ctl.jump]: keyState[ctl.jump],
-      [ctl.down]: keyState[ctl.down],
-      [ctl.action]: keyState[ctl.action]
+  createPlayer(n,pos) {
+    return {
+      ix: n,
+      x: pos.x, y: pos.y,
+      vx:0,vy:0, onGround:false,
+      width:30, height:46,
+      color: PLAYER_TEMPLATE[n].color,
+      hp: 100,
+      maxHp: 100,
+      regen: 12, // hp per 2.5s
+      lastRegen: 0,
+      dead: false,
+      eff: {}, // 'nojump', 'hijump', 'slow' timed (effects)
+      timeEff: {},
+      winTime: null,
+      floor: 0, // last touched floor
     };
   }
+  spawnPoint(n) {
+    return { x: 100+380*n, y: (this.tower.floors-1)*BASE_FLOOR_HEIGHT-60};
+  }
+
+  // Returns player's tower floor index (0 at base, increases up)
+  playerFloor(player) {
+    let f = Math.floor((player.y+player.height/2)/BASE_FLOOR_HEIGHT);
+    return clamp(f,0,this.tower.floors-1);
+  }
+
+  // Updates logic and applies controls, physics, mechanics per frame
+  update(dt,now) {
+    for (let p=0; p<2; ++p) {
+      let player = this.players[p];
+      if (this.won[p] || player.dead) continue;
+      // Regen timer
+      if(now - player.lastRegen > 1200 && player.hp < player.maxHp) {
+        player.hp = clamp(player.hp+player.regen,0,player.maxHp);
+        player.lastRegen = now;
+      }
+      // Platformer movement
+      let eff = player.eff;
+      let moveSpeed = eff.slow ? 2.6 : 4.6;
+      let jumpVel = eff.hijump ? -14.2 : -11.5;
+
+      let left = this.keys[PLAYER_TEMPLATE[p].controls.left], right = this.keys[PLAYER_TEMPLATE[p].controls.right];
+      let jump = this.keys[PLAYER_TEMPLATE[p].controls.jump];
+      // Horizontal move
+      if (left && !right) player.vx = -moveSpeed;
+      else if (right && !left) player.vx = moveSpeed;
+      else player.vx *= 0.6;
+      // Gravity
+      player.vy += 0.7;
+      // Jump
+      if (jump && player.onGround && !eff.nojump) {
+        player.vy = jumpVel; player.onGround = false;
+      }
+      // Clamp velocities
+      player.vx = clamp(player.vx,-9,9);
+      player.vy = clamp(player.vy,-20,14);
+
+      // Detect platforms below (per current floor only for perf/scaling)
+      let floorNo = this.playerFloor(player);
+      player.floor = floorNo;
+      let platforms = this.tower.layout[floorNo] || [];
+
+      let grounded = false, c = 0;
+
+      // Horizontal move/collision
+      player.x += player.vx;
+      player.x = clamp(player.x,0, CANVAS_W-player.width);
+      // Vertical move/collision
+      let oldY = player.y;
+      player.y += player.vy;
+      // If going below 0 (fall), reset to base
+      if (player.y > this.tower.floors*BASE_FLOOR_HEIGHT+50) {
+        Object.assign(player, this.createPlayer(p,this.spawnPoint(p)));
+      }
+      // Collision with platforms
+      for (let plat of platforms) {
+        if (rectHit(player, plat)) {
+          // Lava: damage and knock away
+          if (plat.kind=='lava') {
+            if(now-this.lastLavaHit[p]>580) {
+              player.hp -= 5;
+              this.lastLavaHit[p] = now;
+              // Knock up
+              player.vy = -5;
+            }
+          } 
+          // Button triggers
+          else if (plat.kind=='button') {
+            if(this.lastButton[p]!==plat) {
+              // Spawn temp platform nearby for demo
+              this.tower.layout[floorNo].push({
+                x: plat.x+90, y: plat.y-30, width: 86, height:12, kind:"platform", color: "#54f3e2", exptime: now+4800 });
+              this.lastButton[p]=plat;
+            }
+          }
+          // Effects: timed
+          else if (['nojump','hijump','slow'].includes(plat.kind)) {
+            player.eff[plat.kind]=true; 
+            player.timeEff[plat.kind]=now+2900;
+          }
+          // Ride on top
+          else if (player.vy>=0 && oldY+player.height<=plat.y+4) {
+            player.y = plat.y-player.height; 
+            player.vy = 0;
+            grounded = true; 
+          }
+          // Bump head
+          else if (player.vy<0 && oldY>plat.y+plat.height-8) {
+            player.y = plat.y+plat.height+0.1; player.vy = 0.4;
+          }
+        }
+      }
+      // Timed removal for temp platforms
+      for(let i=platforms.length-1;i>=0;--i){
+        if(platforms[i].exptime && platforms[i].exptime<now) platforms.splice(i,1);
+      }
+      player.onGround = grounded;
+      // Floor boundaries (no falling through base/top)
+      player.y = clamp(player.y, -10, this.tower.floors*BASE_FLOOR_HEIGHT-12);
+      // Remove expired effects
+      for (let key in player.timeEff) {
+        if (player.timeEff[key] && player.timeEff[key]<now) {
+          delete player.eff[key]; delete player.timeEff[key];
+        }
+      }
+      // Check for win pad
+      if (
+        player.y+player.height>this.tower.winPad.y &&
+        player.y< this.tower.winPad.y+this.tower.winPad.height &&
+        player.x+player.width>this.tower.winPad.x &&
+        player.x< this.tower.winPad.x+this.tower.winPad.width
+      ) {
+        // Win!
+        this.won[p]=true; player.winTime=Date.now()-timerStart; winningPlayers[p]=true;
+        completionTimes[p]=player.winTime;
+      }
+      // Death check
+      if(player.hp <= 0) {
+        player.dead=true;
+      }
+
+    }
+  }
 }
 
-/************************************************
-|-------------- Main Game Loop ------------|
-************************************************/
-const game = new Game();
-game.init();
+// Rectangular collision check
+function rectHit(a,b) {
+  return a.x+0.1<a.width+b.x &&
+         a.x+b.width>a.x &&
+         a.y+0.1<a.height+b.y &&
+         a.y+b.height>a.y;
+}
 
-let lastTime = performance.now();
-function mainLoop(now){
-  const dt = (now-lastTime)/1000;
-  lastTime = now;
-  updateInputs(game);
-  game.update(dt);
-  game.draw();
+function drawPlayer(ctx,p,n,camera) {
+  ctx.save();
+  ctx.fillStyle=p.color;
+  ctx.fillRect(p.x-camera.x,p.y-camera.y,p.width,p.height);
+  // Health bar
+  ctx.fillStyle="#2e212f";
+  ctx.fillRect(p.x-camera.x,p.y-camera.y-13,p.width,10);
+  ctx.fillStyle=p.hp>60?'#38e41c':(p.hp>24?'#f2b90a':'#e13b3b');
+  ctx.fillRect(p.x-camera.x,p.y-camera.y-13,p.width*p.hp/p.maxHp,10);
+  ctx.font="bold 16px monospace"; ctx.fillStyle="#fff";
+  ctx.textAlign="center";
+  ctx.fillText(PLAYER_TEMPLATE[n].nickname, p.x-camera.x+p.width/2, p.y-camera.y-23);
+  ctx.restore();
+}
+
+// Platform drawing
+function drawPlatform(ctx,plat,camera,spinAngle){
+  ctx.save();
+  ctx.translate(plat.x-camera.x+plat.width/2, plat.y-camera.y+plat.height/2);
+  if(plat.kind==='spinner' && spinAngle) ctx.rotate(spinAngle);
+  ctx.fillStyle=platformColorForKind(plat.kind, plat.color);
+  ctx.fillRect(-plat.width/2,-plat.height/2,plat.width,plat.height);
+  if(plat.kind=='lava') {
+    ctx.strokeStyle='#ff7b69'; ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(-plat.width/2,-plat.height/3);
+    for(var i=0; i<plat.width; i+=8){
+      ctx.lineTo(i-plat.width/2, Math.random()*8-plat.height/3 + plat.height/2);
+    }
+    ctx.stroke();
+  }
+  else if(['nojump','slow','hijump'].includes(plat.kind)){
+    ctx.font="bold 16px monospace";
+    ctx.fillStyle="#323";
+    ctx.textAlign="center";
+    ctx.fillText({nojump:"NO JUMP",slow:"SLOW",hijump:"HIGH JUMP"}[plat.kind],0,5);
+  }
+  else if(plat.kind=='button'){
+    ctx.beginPath();
+    ctx.arc(0,plat.height/5,plat.width/4,0,2*Math.PI);
+    ctx.fillStyle="#0fc";
+    ctx.fill();
+    ctx.strokeStyle="#001660";
+    ctx.stroke();
+
+  }
+  ctx.restore();
+}
+
+// Camera rectangles: auto split if on diff floors, else single
+function computeCameras(platformer) {
+  const [p1,p2] = platformer.players;
+  if(Math.abs(platformer.playerFloor(p1)-platformer.playerFloor(p2))>0 ||
+     Math.abs(p1.x-p2.x)>650
+  ) {
+    splitScreen=true;
+    // Two mini-cameras: top/bottom
+    return [
+      { x: clamp(p1.x-CANVAS_W/2.5,0,CANVAS_W- CANVAS_W/2), y: clamp(p1.y-170,0, platformer.tower.floors*BASE_FLOOR_HEIGHT-340) },
+      { x: clamp(p2.x-CANVAS_W/2.5,0,CANVAS_W- CANVAS_W/2), y: clamp(p2.y-170,0, platformer.tower.floors*BASE_FLOOR_HEIGHT-340) }
+    ];
+  } else {
+    splitScreen=false;
+    // Shared camera centered on mid of both
+    const cx = (p1.x+p2.x)/2, cy=(p1.y+p2.y)/2;
+    return [
+      {
+        x:clamp(cx-CANVAS_W/2,0,CANVAS_W- CANVAS_W), 
+        y:clamp(cy- CANVAS_H/2,0, platformer.tower.floors*BASE_FLOOR_HEIGHT- CANVAS_H)
+      }
+    ];
+  }
+}
+
+// *** Main Game Render Loop ***
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function renderGame(now) {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  let camers = computeCameras(platformer);
+  let time = timerStart ? (Date.now()-timerStart)/1000 : 0;
+  let spinAngle = (now/700)% (2*Math.PI);
+  // For split-screen
+  if(splitScreen) {
+    for(let scr=0;scr<2;++scr){
+      ctx.save();
+      // Clip to half screen
+      ctx.beginPath();
+      ctx.rect(scr*CANVAS_W/2,0,CANVAS_W/2, CANVAS_H);
+      ctx.clip();
+      // Draw background gradient per floor
+      let cam = camers[scr];
+      drawTowerBackground(ctx, platformer.tower,cam);
+      drawFloorMarkers(ctx,platformer.tower,cam);
+      // Draw platforms
+      let startF = Math.max(0, Math.floor(cam.y/BASE_FLOOR_HEIGHT)-1),
+          endF = Math.min(platformer.tower.floors-1, Math.floor((cam.y+CANVAS_H)/BASE_FLOOR_HEIGHT)+2);
+      for(let f=startF;f<=endF;++f){
+        for(let plat of platformer.tower.layout[f]) {
+          drawPlatform(ctx,plat, cam, plat.kind=="spinner"?spinAngle:0);
+        }
+      }
+      // Draw win pad
+      let wp= platformer.tower.winPad;
+      ctx.save();
+      ctx.fillStyle="#fffa23";
+      ctx.globalAlpha=0.85;
+      ctx.fillRect(wp.x-cam.x,wp.y-cam.y,wp.width,wp.height);
+      ctx.font="bold 18px monospace";
+      ctx.fillStyle="#242e33";
+      ctx.globalAlpha=1.0;
+      ctx.fillText("WIN PAD",wp.x-cam.x+wp.width/2,wp.y-cam.y+wp.height/2+5);
+      ctx.restore();
+      // Draw player
+      let cc = platformer.players[scr];
+      drawPlayer(ctx,cc,scr,cam);
+      // Health/Timer overlay
+      ctx.font="16px monospace";
+      ctx.fillStyle="#fff";
+      ctx.fillText(`Time: ${ (completionTimes[scr]) ? (completionTimes[scr]/1000).toFixed(2) : time.toFixed(2)}s`, scr*CANVAS_W/2+24,37);
+      ctx.restore();
+    }
+  } else {
+    // Single camera
+    let cam = camers[0];
+    drawTowerBackground(ctx,platformer.tower,cam);
+    drawFloorMarkers(ctx,platformer.tower,cam);
+    for (let f=0;f<platformer.tower.floors;++f) {
+      for (let plat of platformer.tower.layout[f]) {
+        drawPlatform(ctx,plat,cam,plat.kind=="spinner"?spinAngle:0);
+      }
+    }
+    // Win pad
+    let wp= platformer.tower.winPad;
+    ctx.save();
+    ctx.fillStyle="#fffa23";
+    ctx.globalAlpha=0.82;
+    ctx.fillRect(wp.x-cam.x,wp.y-cam.y,wp.width,wp.height);
+    ctx.font="bold 18px monospace";
+    ctx.fillStyle="#242e33";
+    ctx.globalAlpha=1.0;
+    ctx.fillText("WIN PAD",wp.x-cam.x+wp.width/2,wp.y-cam.y+wp.height/2+5);
+    ctx.restore();
+    // Both players
+    for(let p=0;p<2;++p) {
+      drawPlayer(ctx,platformer.players[p],p,cam);
+      ctx.font="17px monospace";
+      ctx.fillStyle="#fff";
+      ctx.fillText(`HP: ${platformer.players[p].hp}`,32,35+30*p);
+      ctx.fillText(`Time: ${ (completionTimes[p]) ? (completionTimes[p]/1000).toFixed(2) : time.toFixed(2)}s`, 150,35+30*p);
+    }
+  }
+}
+
+function drawTowerBackground(ctx, tower, cam){
+  ctx.save();
+  let f0 = Math.floor(cam.y/BASE_FLOOR_HEIGHT);
+  let colorA = tower.floorColors[f0%tower.floorColors.length],
+      colorB = tower.floorColors[(f0+1)%tower.floorColors.length];
+  // Vertical gradient per visible window
+  let grad = ctx.createLinearGradient(0,cam.y,0,cam.y+CANVAS_H);
+  grad.addColorStop(0,colorA); grad.addColorStop(1,colorB);
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.restore();
+}
+function drawFloorMarkers(ctx, tower, cam){
+  ctx.save();
+  for(let f=0;f<tower.floors;++f){
+    let y=f*BASE_FLOOR_HEIGHT-cam.y;
+    ctx.strokeStyle="#292f39";
+    ctx.beginPath();
+    ctx.moveTo(0,y); ctx.lineTo(CANVAS_W,y);
+    ctx.stroke();
+    ctx.font="bold 22px monospace";
+    ctx.fillStyle="#fff";
+    ctx.globalAlpha=0.21;
+    ctx.fillText(`F${tower.floors-f}`,CANVAS_W-58,y+22);
+    ctx.globalAlpha=1.0;
+  }
+  ctx.restore();
+}
+
+// *** Cutscene ***
+function renderCutscene(now){
+  ctx.save();
+  // Animated zoom
+  let z = lerp(1.5,1.0,Math.min(cutsceneTimer/1.85,1));
+  ctx.translate(CANVAS_W/2, CANVAS_H/2);
+  ctx.scale(z,z);
+  ctx.translate(-CANVAS_W/2, -CANVAS_H/2);
+  // Background
+  let colA=currentTower.floorColors[0], colB=currentTower.floorColors[1];
+  let grad = ctx.createLinearGradient(0,0,0,CANVAS_H);
+  grad.addColorStop(0,colA); grad.addColorStop(1,colB);
+  ctx.fillStyle=grad; ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.font="bold 84px monospace";
+  ctx.textAlign="center"; ctx.fillStyle="#fff";
+  ctx.globalAlpha=lerp(1.8,0.1,cutsceneTimer/2.7);
+  ctx.fillText(currentTower.name,CANVAS_W/2,CANVAS_H/2-32);
+  ctx.font="bold 30px monospace";
+  ctx.globalAlpha=lerp(1.7,0.05,cutsceneTimer/2.4);
+  ctx.fillText(`[${currentTower.difficulty}]`, CANVAS_W/2,CANVAS_H/2+52);
+  ctx.restore();
+}
+
+function renderWinScreen(){
+  ctx.save();
+  ctx.fillStyle="#1b2b2c"; ctx.globalAlpha=0.95;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.globalAlpha=1.0;
+  ctx.font="bold 54px monospace";
+  ctx.textAlign="center";
+  ctx.fillStyle="#f7db36";
+  ctx.fillText("Congratulations!",CANVAS_W/2,210);
+  ctx.font="bold 32px monospace";
+  ctx.fillStyle="#fff";
+  for(let p=0;m=completionTimes.length,p<2;++p){
+    ctx.fillText(`${PLAYER_TEMPLATE[p].nickname}:`,CANVAS_W/2, 282+p*57);
+    ctx.fillStyle="#44e433";
+    ctx.fillText(`Time: ${completionTimes[p]? (completionTimes[p]/1000).toFixed(2)+"s" : "--"}`,CANVAS_W/2, 314+ p*57);
+    ctx.fillStyle="#fff";
+  }
+  ctx.font="24px monospace";
+  ctx.fillStyle="#f49";
+  ctx.fillText("Press [R] to replay another random tower...", CANVAS_W/2,CANVAS_H-55);
+  ctx.restore();
+}
+
+// *** MAIN LOOP ***
+function mainLoop() {
+  let now = Date.now();
+  if(gameState=='cutscene'){
+    renderCutscene(now);
+    cutsceneTimer += 1/60;
+    if(cutsceneTimer>2.15) {
+      gameState='play'; timerStart=Date.now();
+    }
+  }
+  else if(gameState=='play'){
+    // Update logic
+    platformer.update(1/60,now);
+    renderGame(now);
+    // Win?
+    if(winningPlayers[0]&&winningPlayers[1]) {
+        gameState='win';
+    }
+  }
+  else if(gameState=='win'){
+    renderWinScreen();
+  }
   requestAnimationFrame(mainLoop);
 }
-requestAnimationFrame(mainLoop);
+
+// KEYS
+document.addEventListener('keydown', function(e){
+  for(var p=0;p<2;++p){
+    let k = PLAYER_TEMPLATE[p].controls;
+    if(e.key.toLowerCase()==k.left) platformer.keys[k.left]=1;
+    if(e.key.toLowerCase()==k.right) platformer.keys[k.right]=1;
+    if(e.key.toLowerCase()==k.jump) platformer.keys[k.jump]=1;
+  }
+  // Replay on win screen
+  if(gameState=='win'&&e.key.toLowerCase()=='r') setupGame();
+});
+document.addEventListener('keyup', function(e){
+  for(var p=0;p<2;++p){
+    let k = PLAYER_TEMPLATE[p].controls;
+    if(e.key.toLowerCase()==k.left) platformer.keys[k.left]=0;
+    if(e.key.toLowerCase()==k.right) platformer.keys[k.right]=0;
+    if(e.key.toLowerCase()==k.jump) platformer.keys[k.jump]=0;
+  }
+});
+
+// Launch a random tower game
+function setupGame(){
+  cutsceneTimer=0; timerStart=null;
+  currentTower = generateTowerLayout(randomTower(), PLATFORM_COUNT_MIN + Math.floor(Math.random()*(PLATFORM_COUNT_MAX-PLATFORM_COUNT_MIN+1)));
+  platformer = new PlatformerGame(currentTower);
+  completionTimes=[null,null]; winningPlayers=[false,false];
+  healthUI=[100,100];
+  gameState="cutscene";
+}
+
+setupGame();
+mainLoop();
 
 </script>
 </body>
