@@ -1,1 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Platformer Tower</title>
+  <style>
+    body { margin: 0; background: #111; font-family: sans-serif; }
+    canvas { display: block; margin: 0 auto; background: #222; }
+    #menu, #settings, #editor { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    button { margin: 12px; padding: 12px 24px; font-size: 20px; background: #333; color: white; border: none; cursor: pointer; }
+    .hidden { display: none; }
+    #editorCanvas { background: #222; border: 2px solid #555; }
+    .toolbar { display: flex; gap: 12px; margin-bottom: 12px; }
+    .toolbar button { font-size: 16px; }
+  </style>
+</head>
+<body>
 
+<!-- MENU SCREENS -->
+<div id="menu">
+  <button onclick="startGame()">PLAY</button>
+  <button onclick="showSettings()">SETTINGS</button>
+  <button onclick="showEditor()">CREATE</button>
+</div>
+
+<div id="settings" class="hidden">
+  <h2>Choose Device</h2>
+  <button onclick="setDevice('pc')">PC</button>
+  <button onclick="setDevice('mobile')">Mobile</button>
+  <button onclick="backToMenu()">Back</button>
+</div>
+
+<div id="editor" class="hidden">
+  <div class="toolbar">
+    <button onclick="setTool('platform')">Platform</button>
+    <button onclick="setTool('lava')">Lava</button>
+    <button onclick="setTool('checkpoint')">Checkpoint</button>
+    <button onclick="clearEditor()">Clear</button>
+    <button onclick="backToMenu()">Back</button>
+  </div>
+  <canvas id="editorCanvas" width="1024" height="480"></canvas>
+</div>
+
+<canvas id="gameCanvas" width="1024" height="480" class="hidden"></canvas>
+
+<script>
+// ==== GLOBAL STATE ====
+let device = "pc";
+let currentTool = "platform";
+let editorObjects = [];
+
+// ==== MENU LOGIC ====
+function startGame() {
+  document.getElementById("menu").classList.add("hidden");
+  document.getElementById("gameCanvas").classList.remove("hidden");
+  gameLoop();
+}
+function showSettings() {
+  document.getElementById("menu").classList.add("hidden");
+  document.getElementById("settings").classList.remove("hidden");
+}
+function showEditor() {
+  document.getElementById("menu").classList.add("hidden");
+  document.getElementById("editor").classList.remove("hidden");
+  drawEditor();
+}
+function backToMenu() {
+  document.getElementById("menu").classList.remove("hidden");
+  document.getElementById("settings").classList.add("hidden");
+  document.getElementById("editor").classList.add("hidden");
+  document.getElementById("gameCanvas").classList.add("hidden");
+}
+function setDevice(type) {
+  device = type;
+  backToMenu();
+}
+function setTool(tool) {
+  currentTool = tool;
+}
+function clearEditor() {
+  editorObjects = [];
+  drawEditor();
+}
+
+// ==== EDITOR LOGIC ====
+const editorCanvas = document.getElementById("editorCanvas");
+const editorCtx = editorCanvas.getContext("2d");
+editorCanvas.addEventListener("click", e => {
+  const rect = editorCanvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  let obj = { x: x - 20, y: y - 10, width: 40, height: 20, type: currentTool };
+  editorObjects.push(obj);
+  drawEditor();
+});
+function drawEditor() {
+  editorCtx.clearRect(0, 0, 1024, 480);
+  for (const obj of editorObjects) {
+    if (obj.type === "platform") {
+      editorCtx.fillStyle = "#666";
+    } else if (obj.type === "lava") {
+      editorCtx.fillStyle = "#b43a3a";
+    } else if (obj.type === "checkpoint") {
+      editorCtx.fillStyle = "#4ab3ed";
+    }
+    editorCtx.fillRect(obj.x, obj.y, obj.width, obj.height);
+    editorCtx.strokeStyle = "#fff";
+    editorCtx.strokeRect(obj.x, obj.y, obj.width, obj.height);
+  }
+}
+
+// ==== GAME LOGIC ====
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const keys = {};
+window.addEventListener("keydown", e => keys[e.code] = true);
+window.addEventListener("keyup", e => keys[e.code] = false);
+
+class Player {
+  constructor(x, y, color, controls) {
+    this.x = x;
+    this.y = y;
+    this.width = 36;
+    this.height = 48;
+    this.color = color;
+    this.vx = 0;
+    this.vy = 0;
+    this.speed = 5;
+    this.jumpVelocity = -13;
+    this.gravity = 0.7;
+    this.maxFall = 17;
+    this.onGround = false;
+    this.controls = controls;
+    this.dead = false;
+    this.checkpoint = { x, y };
+  }
+  get rect() {
+    return { x: this.x, y: this.y, width: this.width, height: this.height };
+  }
+  respawn() {
+    this.x = this.checkpoint.x;
+    this.y = this.checkpoint.y;
+    this.vx = 0;
+    this.vy = 0;
+    this.dead = false;
+  }
+  update(objects) {
+    let move = 0;
+    if (keys[this.controls.left]) move -= 1;
+    if (keys[this.controls.right]) move += 1;
+    this.vx = move * this.speed;
+    if (this.onGround && keys[this.controls.jump]) {
+      this.vy = this.jumpVelocity;
+      this.onGround = false;
+    }
+    this.vy += this.gravity;
+    if (this.vy > this.maxFall) this.vy = this.maxFall;
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.onGround = false;
+
+    for (const obj of objects) {
+      if (rectsCollide(this.rect, obj)) {
+        if (obj.type === "platform") {
+          if (this.vy > 0) {
+            this.y = obj.y - this.height;
+            this.vy = 0;
+            this.onGround = true;
+          }
+        } else if (obj.type === "lava") {
+          this.dead = true;
+        } else if (obj.type === "checkpoint") {
+          this.checkpoint = { x: obj.x, y: obj.y };
+        }
+      }
+    }
+
+    if (this.y > 480) this.dead = true;
+  }
+  draw(ctx) {
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x, this.y, this.width, this.height);
+  }
+}
+
+function rectsCollide(a, b) {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+const player1 = new Player(100, 400, "#23b4e4", { left: "KeyA", right: "KeyD", jump: "KeyW" });
+const player2 = new Player(160, 400, "#e4b423", { left: "ArrowLeft", right: "ArrowRight", jump: "ArrowUp" });
+
+function gameLoop() {
+  if (player1.dead) player1.respawn();
+  if (player2.dead) player2.respawn();
+
+  player1.update(editorObjects);
+  player2.update(editorObjects);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const obj of editorObjects) {
+    if (obj.type === "platform") ctx.fillStyle = "#666";
+    else if (obj.type === "lava") ctx.fillStyle = "#b43a3a";
+    else if (obj.type === "checkpoint") ctx.fillStyle = "#4ab3ed";
+    ctx.fillRect(obj.x, obj.y, obj.width,
+    ctx.fillRect(obj.x, obj.y, obj.width, obj.height);
+    ctx.strokeStyle = "#fff";
+    ctx.strokeRect(obj.x, obj.y, obj.width, obj.height);
+  }
+
+  // Draw players
+  player1.draw(ctx);
+  player2.draw(ctx);
+
+  // Simple HUD
+  ctx.fillStyle = "#fff";
+  ctx.font = "16px monospace";
+  ctx.fillText("P1 Checkpoint: " + player1.checkpoint.x + "," + player1.checkpoint.y, 20, 20);
+  ctx.fillText("P2 Checkpoint: " + player2.checkpoint.x + "," + player2.checkpoint.y, 20, 40);
+
+  requestAnimationFrame(gameLoop);
+}
+</script>
+</body>
+</html>
