@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Tower Platformer — Whole Updated Code</title>
+  <title>Tower Platformer — Complete Updated Build</title>
   <style>
     :root {
       --bg: #0e0f14;
@@ -18,6 +18,7 @@
     }
     html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; overflow:hidden; }
     canvas { display:block; margin:0 auto; background:var(--canvas); transform-origin:center top; }
+
     .ui-layer { position:fixed; inset:0; display:grid; place-items:center; pointer-events:none; }
     .panel {
       pointer-events:auto; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px;
@@ -35,7 +36,6 @@
     .seg.active { background:#2a3147; border-color:#3b4767; }
     .row { display:flex; gap:12px; align-items:center; margin:12px 0; flex-wrap:wrap; }
 
-    /* Editor toolbar */
     .toolbar {
       position:fixed; left:16px; top:16px; display:flex; gap:8px; background:#141725cc; border:1px solid #242a3c;
       border-radius:10px; padding:8px; z-index:10; backdrop-filter: blur(4px);
@@ -50,7 +50,6 @@
       padding:8px 12px; border-radius:10px; backdrop-filter: blur(4px); pointer-events:none; z-index:10;
     }
 
-    /* Mobile controls */
     .mobile-controls { position:fixed; inset:0; pointer-events:none; }
     .mc-btn {
       position:absolute; width:var(--mc-size); height:var(--mc-size); border-radius:50%;
@@ -85,7 +84,6 @@
       <button class="btn" id="btnSettings">SETTINGS</button>
     </div>
 
-    <!-- Settings -->
     <div id="settingsBlock" style="display:none;">
       <div class="row">
         <div style="min-width:140px;">Device</div>
@@ -108,10 +106,9 @@
           <div class="seg" data-screen="small">Smaller</div>
         </div>
       </div>
-      <div class="help">On PC, control overlay is disabled. On Mobile, Smaller screen reduces UI and expands visible range.</div>
+      <div class="help">On PC, overlay is disabled. On Mobile, Smaller screen scales UI and expands visible range.</div>
     </div>
 
-    <!-- Play options -->
     <div id="playOptions" style="display:none;">
       <div class="row">
         <div style="min-width:140px;">Mode</div>
@@ -129,6 +126,13 @@
         </div>
       </div>
       <div class="row">
+        <div style="min-width:140px;">Tower</div>
+        <div class="segmented" id="towerSeg">
+          <div class="seg active" data-tower="default">Default</div>
+          <div class="seg" data-tower="custom">Custom (last saved)</div>
+        </div>
+      </div>
+      <div class="row">
         <button class="btn primary" id="btnStartPlay">Start</button>
         <button class="btn" id="btnBackMenu">Back</button>
       </div>
@@ -143,9 +147,11 @@
   <div class="tool" id="rotateBtn">Rotate</div>
   <div class="tool" id="playtestBtn">Playtest</div>
   <div class="tool" id="clearBtn">Clear</div>
+  <div class="tool" id="saveBtn">Save</div>
+  <div class="tool" id="loadBtn">Load</div>
   <div class="tool danger" id="exitCreateBtn">Exit</div>
 </div>
-<div class="hint" id="editorHint" style="display:none;">Create: click to place, drag to move. WASD to pan. Spawn and Finish pad are movable.</div>
+<div class="hint" id="editorHint" style="display:none;">Create: click to place, drag to move. WASD to pan. Spawn and Finish pad are movable. Rotate toggles 90°.</div>
 
 <!-- Mobile controls -->
 <div class="mobile-controls" id="mobileControls" style="display:none;">
@@ -154,7 +160,7 @@
   <div class="mc-btn" id="mcP1Right" style="left: 126px; bottom: 28px;">▶</div>
   <div class="mc-btn" id="mcP1Jump" style="left: 76px; bottom: 118px;">⤒</div>
   <div class="mc-btn" id="mcP1Down" style="left: 76px; bottom: 200px; display:none;">▼</div>
-  <!-- Player 2 (hidden when bot or in create) -->
+  <!-- Player 2 (hidden when bot or in create/playtest) -->
   <div class="mc-btn" id="mcP2Left" style="right: 126px; bottom: 28px;">◀</div>
   <div class="mc-btn" id="mcP2Right" style="right: 26px; bottom: 28px;">▶</div>
   <div class="mc-btn" id="mcP2Jump" style="right: 76px; bottom: 118px;">⤒</div>
@@ -166,10 +172,10 @@ const CANVAS_WIDTH = 1024;
 const CANVAS_HEIGHT = 480;
 const VIEW_WIDTH = CANVAS_WIDTH / 2;
 const VIEW_HEIGHT = CANVAS_HEIGHT;
-const WORLD_WIDTH = 1600; // world logical width for create mode panning
+const WORLD_WIDTH = 1600;
 const WORLD_HEIGHT = 2400;
 
-let renderScale = 1; // reduced on mobile small for more range view
+let renderScale = 1;
 
 /* ==== STATE ==== */
 let mode = "menu"; // "menu" | "play" | "create" | "playtest"
@@ -178,6 +184,7 @@ let overlayEnabled = false;
 let screenMode = "normal"; // "normal" | "small"
 let playMode = "multiplayer"; // "multiplayer" | "bot"
 let botDifficulty = "normal"; // "normal" | "tryhard" | "master"
+let towerSelection = "default"; // "default" | "custom"
 let currentSplitMode = "merged";
 let gridSnap = 20;
 let rotateMode = false;
@@ -185,7 +192,7 @@ let rotateMode = false;
 let startTimeP1 = null;
 let startTimeP2 = null;
 let finished = false;
-let finishBanner = document.getElementById("finishBanner");
+const finishBanner = document.getElementById("finishBanner");
 
 /* ==== INPUT ==== */
 const keys = {};
@@ -220,20 +227,19 @@ const screenSeg = document.getElementById("screenSeg");
 const playModeSeg = document.getElementById("playModeSeg");
 const botDiffSeg = document.getElementById("botDiffSeg");
 const botDiffRow = document.getElementById("botDiffRow");
+const towerSeg = document.getElementById("towerSeg");
 
 segmentedInit(deviceSeg, deviceType, "data-device", v => {
   deviceType = v;
-  // PC disables control overlay, but smaller screen remains available
   if (deviceType === "pc") {
     overlayEnabled = false;
     [...overlaySeg.children].forEach(n => n.classList.remove("active"));
     overlaySeg.querySelector('[data-overlay="off"]').classList.add("active");
     overlayRow.style.display = "none";
-    applyScreenScale(); // PC small screen only scales canvas
   } else {
     overlayRow.style.display = "flex";
-    applyScreenScale(); // Mobile small screen scales UI and visible range
   }
+  applyScreenScale();
 });
 segmentedInit(overlaySeg, overlayEnabled ? "on" : "off", "data-overlay", v => overlayEnabled = (v === "on"));
 segmentedInit(screenSeg, screenMode, "data-screen", v => { screenMode = v; applyScreenScale(); });
@@ -242,6 +248,7 @@ segmentedInit(playModeSeg, playMode, "data-playmode", v => {
   botDiffRow.style.display = (playMode === "bot") ? "flex" : "none";
 });
 segmentedInit(botDiffSeg, botDifficulty, "data-diff", v => botDifficulty = v);
+segmentedInit(towerSeg, towerSelection, "data-tower", v => towerSelection = v);
 
 btnPlay.addEventListener("click", () => {
   playOptions.style.display = "block";
@@ -255,7 +262,7 @@ btnSettings.addEventListener("click", () => {
   playOptions.style.display = "none";
 });
 btnStartPlay.addEventListener("click", () => {
-  setDefaultLevel();
+  loadActiveLevel(towerSelection);
   mode = "play";
   menuLayer.style.display = "none";
   editorToolbar.style.display = "none";
@@ -263,7 +270,7 @@ btnStartPlay.addEventListener("click", () => {
   resetPlayersToSpawn();
   finished = false;
   startTimeP1 = Date.now();
-  startTimeP2 = playMode === "bot" ? Date.now() : (playMode === "multiplayer" ? Date.now() : null);
+  startTimeP2 = (playMode === "multiplayer" || playMode === "bot") ? Date.now() : null;
   syncMobileControls();
 });
 btnCreate.addEventListener("click", () => {
@@ -300,43 +307,55 @@ function syncMobileControls() {
   const showOverlay = (deviceType === "mobile" && overlayEnabled && mode !== "menu");
   mcLayer.style.display = showOverlay ? "block" : "none";
 
-  // Hide P2 controls if bot or create mode
   const hideP2 = (mode === "create" || (mode === "play" && playMode === "bot") || mode === "playtest");
   mcP2Left.style.display = hideP2 ? "none" : "block";
   mcP2Right.style.display = hideP2 ? "none" : "block";
   mcP2Jump.style.display = hideP2 ? "none" : "block";
 
-  // Down button only in create mode
   mcP1Down.style.display = (mode === "create") ? "block" : "none";
 }
 
 function applyScreenScale() {
   const root = document.documentElement;
+  const canvas = document.getElementById("gameCanvas");
   if (deviceType === "mobile" && screenMode === "small") {
-    renderScale = 0.85; // draw scaled down for more range
+    renderScale = 0.85;
     root.style.setProperty("--mc-size", "64px");
     root.style.setProperty("--panel-width", "720px");
     root.style.setProperty("--panel-scale", "0.9");
     root.style.setProperty("--ui-shift-x", "20px");
+    canvas.style.transform = "scale(0.9)";
   } else if (screenMode === "small") {
-    renderScale = 1.0; // PC: only UI/canvas size changes
+    renderScale = 1.0;
     root.style.setProperty("--mc-size", "72px");
     root.style.setProperty("--panel-width", "780px");
     root.style.setProperty("--panel-scale", "0.95");
     root.style.setProperty("--ui-shift-x", "0px");
+    canvas.style.transform = "scale(0.95)";
   } else {
     renderScale = 1.0;
     root.style.setProperty("--mc-size", "84px");
     root.style.setProperty("--panel-width", "860px");
     root.style.setProperty("--panel-scale", "1");
     root.style.setProperty("--ui-shift-x", "0px");
+    canvas.style.transform = "scale(1)";
   }
 }
 
 /* ==== UTILS ==== */
 function clamp(val, min, max) { return Math.max(min, Math.min(val, max)); }
 function rectsCollide(a, b) {
-  return (a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y);
+  // Handle rotated objects by approximating bounding box (simple toggle rot90)
+  const ax = a.rot90 ? a.x - a.height : a.x;
+  const ay = a.rot90 ? a.y : a.y;
+  const aw = a.rot90 ? a.height : a.width;
+  const ah = a.rot90 ? a.width : a.height;
+  const bx = b.rot90 ? b.x - b.height : b.x;
+  const by = b.rot90 ? b.y : b.y;
+  const bw = b.rot90 ? b.height : b.width;
+  const bh = b.rot90 ? b.width : b.height;
+
+  return (ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by);
 }
 function snap(v, s) { return s ? Math.round(v / s) * s : v; }
 function timeFmt(ms) {
@@ -358,6 +377,7 @@ class Player {
     this.lastSafe = { x, y };
   }
   get rect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
+
   update(platforms, lavas) {
     if (this.isBot) this.botLogic(platforms, lavas);
     else {
@@ -366,7 +386,6 @@ class Player {
       if (keys[this.controls.right]) move += 1;
       this.vx = move * 5.2;
       if (this.onGround && keys[this.controls.jump]) { this.vy = -14.2; this.onGround = false; }
-      if (mode === "create" && keys["KeyS"]) { /* down key exists only for pan, no crouch */ }
     }
 
     this.vy += 0.8; if (this.vy > 18) this.vy = 18;
@@ -375,8 +394,8 @@ class Player {
     this.x += this.vx;
     for (const p of platforms) {
       if (rectsCollide(this.rect, p)) {
-        if (this.vx > 0) this.x = p.x - this.width;
-        else if (this.vx < 0) this.x = p.x + p.width;
+        if (this.vx > 0) this.x = (p.rot90 ? (p.x - p.height) : p.x) - this.width;
+        else if (this.vx < 0) this.x = (p.rot90 ? (p.x - p.height) : p.x) + (p.rot90 ? p.height : p.width);
       }
     }
 
@@ -385,23 +404,18 @@ class Player {
     this.y += this.vy; this.onGround = false;
     for (const p of platforms) {
       if (rectsCollide(this.rect, p)) {
-        if (this.vy > 0) { this.y = p.y - this.height; this.vy = 0; this.onGround = true; this.lastSafe = { x: this.x, y: this.y }; }
-        else if (this.vy < 0) { this.y = p.y + p.height; this.vy = 0; }
+        const ph = p.rot90 ? p.width : p.height;
+        const py = p.y;
+        if (this.vy > 0) { this.y = py - this.height; this.vy = 0; this.onGround = true; this.lastSafe = { x: this.x, y: this.y }; }
+        else if (this.vy < 0) { this.y = py + ph; this.vy = 0; }
       }
     }
 
-    // Lava
     for (const l of lavas) { if (rectsCollide(this.rect, l)) this.dead = true; }
     if (this.y > WORLD_HEIGHT) this.dead = true;
   }
 
   botLogic(platforms, lavas) {
-    // Smarter heuristic:
-    // 1) If falling badly, steer back to last safe
-    // 2) If on ground, choose next target platform above within jump arc; else approach edge
-    // 3) Avoid lava by jumping early or detouring
-
-    // Parameters by difficulty
     const cfg = {
       speed: (botDifficulty === "normal" ? 5.0 : botDifficulty === "tryhard" ? 5.8 : 6.2),
       jumpV: -14.2,
@@ -409,68 +423,66 @@ class Player {
       arcY: (botDifficulty === "master" ? 140 : botDifficulty === "tryhard" ? 120 : 110),
     };
 
-    // If falling fast, try to return
+    // Recover toward last safe if falling
     if (!this.onGround && this.vy > 12) {
       const dirBack = Math.sign(this.lastSafe.x - this.x);
       this.vx = dirBack * cfg.speed;
       return;
     }
 
-    // Current ground platform
+    // Ground
     let ground = null;
     const feetY = this.y + this.height + 2;
     for (const p of platforms) {
-      const onTop = (feetY >= p.y - 2 && feetY <= p.y + 10);
+      const py = p.y, ph = p.rot90 ? p.width : p.height, px = p.rot90 ? (p.x - p.height) : p.x, pw = p.rot90 ? p.height : p.width;
+      const onTop = (feetY >= py - 2 && feetY <= py + 10);
       const midX = this.x + this.width / 2;
-      if (onTop && midX >= p.x && midX <= p.x + p.width) { ground = p; break; }
+      if (onTop && midX >= px && midX <= px + pw) { ground = { x:px, y:py, w:pw }; break; }
     }
 
-    // Target: prefer platforms ABOVE and towards finishPad.x
+    // Target platform selection: above and closer to finish
     const goalX = finishPad.x + finishPad.width / 2;
     const dirToGoal = Math.sign(goalX - (this.x + this.width / 2));
-    let candidate = null;
-    let bestScore = -Infinity;
+    let candidate = null, bestScore = -Infinity;
     for (const p of platforms) {
-      if (p.y >= this.y + this.height - 6) continue; // only consider above
-      const dx = (dirToGoal > 0) ? (p.x - this.x) : ((this.x) - (p.x + p.width));
-      if (dx < -20 || dx > cfg.arcX + 80) continue; // roughly ahead
-      const dy = (this.y - p.y);
-      if (dy > cfg.arcY + 60) continue; // too high
-      // Score: closer to goal and moderately above
-      const centerDistGoal = Math.abs((p.x + p.width / 2) - goalX);
-      const score = -centerDistGoal - dy * 0.5;
-      if (score > bestScore) { bestScore = score; candidate = p; }
+      const px = p.rot90 ? (p.x - p.height) : p.x;
+      const pw = p.rot90 ? p.height : p.width;
+      const py = p.y;
+
+      if (py >= this.y + this.height - 6) continue; // only above
+      const dx = (dirToGoal > 0) ? (px - this.x) : (this.x - (px + pw));
+      if (dx < -20 || dx > cfg.arcX + 80) continue;
+      const dy = (this.y - py);
+      if (dy > cfg.arcY + 60) continue;
+
+      const centerDistGoal = Math.abs((px + pw / 2) - goalX);
+      const score = -centerDistGoal - dy * 0.6;
+      if (score > bestScore) { bestScore = score; candidate = { x:px, y:py, w:pw }; }
     }
 
-    // Avoid lava ahead (on same level)
-    const aheadRect = {
-      x: this.x + (dirToGoal > 0 ? this.width + 6 : -12),
-      y: this.y + this.height - 8,
-      width: 14, height: 14
-    };
+    // Lava avoidance
+    const aheadRect = { x: this.x + (dirToGoal > 0 ? this.width + 6 : -12), y: this.y + this.height - 8, width: 14, height: 14 };
     const lavaAhead = lavas.some(l => rectsCollide(aheadRect, l));
 
-    // Movement
     this.vx = dirToGoal * cfg.speed;
 
-    // Jump logic
     const nearEdge = ground ? (
-      (dirToGoal > 0 && this.x + this.width > ground.x + ground.width - 6) ||
+      (dirToGoal > 0 && this.x + this.width > ground.x + ground.w - 6) ||
       (dirToGoal < 0 && this.x < ground.x + 6)
     ) : true;
 
-    const shouldJump =
-      (this.onGround && (lavaAhead || nearEdge || !!candidate));
-
-    if (shouldJump) {
-      this.vy = cfg.jumpV; this.onGround = false;
-    }
+    const shouldJump = (this.onGround && (lavaAhead || nearEdge || !!candidate));
+    if (shouldJump) { this.vy = cfg.jumpV; this.onGround = false; }
   }
 
   draw(ctx) {
     ctx.save();
-    ctx.fillStyle = this.color;
+    // Body gradient for quality
+    const grd = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.height);
+    grd.addColorStop(0, this.color); grd.addColorStop(1, "#0c0f14");
+    ctx.fillStyle = grd; ctx.strokeStyle = "#0a0d12"; ctx.lineWidth = 2;
     ctx.fillRect(this.x, this.y, this.width, this.height);
+    ctx.strokeRect(this.x+0.5, this.y+0.5, this.width-1, this.height-1);
     // Eyes
     ctx.fillStyle = "#fff";
     ctx.fillRect(this.x + 7, this.y + 12, 8, 8);
@@ -492,44 +504,68 @@ let lavas = [];
 let spawnMarker = { ...defaultSpawn };
 let finishPad = { ...defaultFinishPad };
 
-// First floor with reachable first platform right off the floor
+// Reachable staircase floors with alternating tint
 const defaultPlatforms = [
   { ...persistentFloor },
-  { x: 120, y: 2300, width: 160, height: 20 }, // right off the floor
-  { x: 320, y: 2230, width: 160, height: 20 },
-  { x: 540, y: 2160, width: 160, height: 20 },
-  { x: 760, y: 2090, width: 160, height: 20 },
-  { x: 980, y: 2020, width: 160, height: 20 },
-  // Second floor
-  { x: 240, y: 1880, width: 160, height: 20 },
-  { x: 480, y: 1810, width: 160, height: 20 },
-  { x: 740, y: 1740, width: 160, height: 20 },
-  { x: 1000, y: 1670, width: 160, height: 20 },
-  // Third floor
-  { x: 300, y: 1540, width: 160, height: 20 },
-  { x: 580, y: 1470, width: 160, height: 20 },
-  { x: 860, y: 1400, width: 160, height: 20 },
-  // Fourth floor near finish
-  { x: 360, y: 1280, width: 160, height: 20 },
-  { x: 660, y: 1200, width: 160, height: 20 },
-  { x: 980, y: 1120, width: 160, height: 20 },
-  { x: 1260, y: 1040, width: 160, height: 20 },
-  { x: 1360, y: 900, width: 180, height: 20 },
-  { x: 1430, y: 760, width: 160, height: 20 },
+  // Floor 1 (near floor)
+  { x: 120, y: 2300, width: 180, height: 20, tint: 1 },
+  { x: 320, y: 2230, width: 160, height: 20, tint: 1 },
+  { x: 540, y: 2160, width: 160, height: 20, tint: 1 },
+  { x: 760, y: 2090, width: 160, height: 20, tint: 1 },
+  { x: 980, y: 2020, width: 160, height: 20, tint: 1 },
+  // Floor 2
+  { x: 240, y: 1880, width: 160, height: 20, tint: 2 },
+  { x: 480, y: 1810, width: 160, height: 20, tint: 2 },
+  { x: 740, y: 1740, width: 160, height: 20, tint: 2 },
+  { x: 1000, y: 1670, width: 160, height: 20, tint: 2 },
+  // Floor 3
+  { x: 300, y: 1540, width: 160, height: 20, tint: 1 },
+  { x: 580, y: 1470, width: 160, height: 20, tint: 1 },
+  { x: 860, y: 1400, width: 160, height: 20, tint: 1 },
+  // Floor 4 near finish
+  { x: 360, y: 1280, width: 160, height: 20, tint: 2 },
+  { x: 660, y: 1200, width: 160, height: 20, tint: 2 },
+  { x: 980, y: 1120, width: 160, height: 20, tint: 2 },
+  { x: 1260, y: 1040, width: 160, height: 20, tint: 2 },
+  { x: 1360, y: 900, width: 180, height: 20, tint: 1 },
+  { x: 1430, y: 760, width: 160, height: 20, tint: 1 },
 ];
-
 const defaultLava = [
-  { x: 500, y: 2338, width: 60, height: 12 }, // small hazards along the way
+  { x: 500, y: 2338, width: 60, height: 12 },
   { x: 820, y: 2088, width: 60, height: 12 },
   { x: 1060, y: 1668, width: 60, height: 12 },
   { x: 1380, y: 748, width: 60, height: 12 },
 ];
+
+function ensureFloor() {
+  const hasFloor = platforms.some(p => p.x === persistentFloor.x && p.y === persistentFloor.y && p.width === persistentFloor.width && p.height === persistentFloor.height);
+  if (!hasFloor) platforms.unshift({ ...persistentFloor });
+}
+function clampSpawnToFloor() { spawnMarker.y = persistentFloor.y - 48; }
 
 function setDefaultLevel() {
   platforms = JSON.parse(JSON.stringify(defaultPlatforms));
   lavas = JSON.parse(JSON.stringify(defaultLava));
   spawnMarker = { ...defaultSpawn };
   finishPad = { ...defaultFinishPad };
+  ensureFloor(); clampSpawnToFloor();
+}
+function setCustomLevelFromStorage() {
+  const data = localStorage.getItem("towerLevel");
+  if (data) {
+    const parsed = JSON.parse(data);
+    platforms = parsed.platforms || [ { ...persistentFloor } ];
+    lavas = parsed.lavas || [];
+    spawnMarker = parsed.spawnMarker || { ...defaultSpawn };
+    finishPad = parsed.finishPad || { ...defaultFinishPad };
+    ensureFloor(); clampSpawnToFloor();
+  } else {
+    setDefaultLevel();
+  }
+}
+function loadActiveLevel(selection) {
+  if (selection === "custom") setCustomLevelFromStorage();
+  else setDefaultLevel();
 }
 
 /* ==== DRAWING ==== */
@@ -537,39 +573,48 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
 function drawPlatform(ctx, p) {
+  const baseTop = p.tint === 2 ? "#51576a" : "#6d7b91";
+  const baseBottom = p.tint === 2 ? "#34394a" : "#393f52";
+  const px = p.rot90 ? (p.x - p.height) : p.x;
+  const pw = p.rot90 ? p.height : p.width;
+  const ph = p.rot90 ? p.width : p.height;
+
   ctx.save();
-  ctx.fillStyle = "#6d7b91";
-  if (p.rot90) {
-    ctx.translate(p.x, p.y);
-    ctx.rotate(Math.PI / 2);
-    ctx.fillRect(0, -p.width, p.height, p.width);
-  } else {
-    ctx.fillRect(p.x, p.y, p.width, p.height);
-  }
+  const g = ctx.createLinearGradient(px, p.y, px, p.y + ph);
+  g.addColorStop(0, baseTop); g.addColorStop(1, baseBottom);
+  ctx.fillStyle = g; ctx.strokeStyle = "#2a3147";
+  ctx.fillRect(px, p.y, pw, ph);
+  ctx.strokeRect(px, p.y, pw, ph);
   ctx.restore();
 }
 function drawLava(ctx, l) {
+  const lx = l.rot90 ? (l.x - l.height) : l.x;
+  const lw = l.rot90 ? l.height : l.width;
+  const lh = l.rot90 ? l.width : l.height;
+
   ctx.save();
-  ctx.fillStyle = "#d44b4b";
-  if (l.rot90) {
-    ctx.translate(l.x, l.y);
-    ctx.rotate(Math.PI / 2);
-    ctx.fillRect(0, -l.width, l.height, l.width);
-  } else {
-    ctx.fillRect(l.x, l.y, l.width, l.height);
-  }
+  const g = ctx.createLinearGradient(lx, l.y, lx, l.y + lh);
+  g.addColorStop(0, "#d44b4b"); g.addColorStop(1, "#8b2a2a");
+  ctx.fillStyle = g; ctx.strokeStyle = "#ffe5e5";
+  ctx.fillRect(lx, l.y, lw, lh);
+  ctx.strokeRect(lx, l.y, lw, lh);
   ctx.restore();
 }
 function drawFinishPad(ctx, fp) {
   ctx.save();
-  ctx.fillStyle = "#2bbf57";
+  const g = ctx.createLinearGradient(fp.x, fp.y, fp.x, fp.y + fp.height);
+  g.addColorStop(0, "#9bff9b"); g.addColorStop(1, "#2bbf57");
+  ctx.fillStyle = g; ctx.strokeStyle = "#0b4f2b";
   ctx.fillRect(fp.x, fp.y, fp.width, fp.height);
+  ctx.strokeRect(fp.x, fp.y, fp.width, fp.height);
   ctx.restore();
 }
 function drawSpawnMarker(ctx, sp) {
   if (mode === "create") {
     ctx.save();
-    ctx.fillStyle = "#3aeeb4";
+    const g = ctx.createLinearGradient(sp.x, sp.y, sp.x, sp.y + sp.height);
+    g.addColorStop(0, "#3aeeb4"); g.addColorStop(1, "#1aa57e");
+    ctx.fillStyle = g;
     ctx.fillRect(sp.x, sp.y, sp.width, sp.height);
     ctx.restore();
   }
@@ -581,10 +626,8 @@ function drawWorld(ctx) {
   drawSpawnMarker(ctx, spawnMarker);
 }
 
-/* ==== CAMERA (scaled for mobile small) ==== */
-function getViewDims() {
-  return [VIEW_WIDTH / renderScale, VIEW_HEIGHT / renderScale];
-}
+/* ==== CAMERA (scaled) ==== */
+function getViewDims() { return [VIEW_WIDTH / renderScale, VIEW_HEIGHT / renderScale]; }
 function calcCamera(px, py) {
   const [vw, vh] = getViewDims();
   let camX = Math.round(px - vw / 2);
@@ -618,27 +661,23 @@ function resetPlayersToSpawn() {
   player2.isBot = (playMode === "bot");
 }
 
-/* ==== HUD ==== */
-function drawFinishBanner() {
-  if (!finished) { finishBanner.style.display = "none"; return; }
-  finishBanner.style.display = "block";
-}
-
 /* ==== EDITOR STATE & INPUT ==== */
 const editorToolbar = document.getElementById("editorToolbar");
 const editorHint = document.getElementById("editorHint");
 const rotateBtn = document.getElementById("rotateBtn");
 const playtestBtn = document.getElementById("playtestBtn");
 const clearBtn = document.getElementById("clearBtn");
+const saveBtn = document.getElementById("saveBtn");
+const loadBtn = document.getElementById("loadBtn");
 const exitCreateBtn = document.getElementById("exitCreateBtn");
+
 let currentTool = "platform";
 [...editorToolbar.querySelectorAll(".tool[data-tool]")].forEach(btn => {
   btn.addEventListener("click", () => {
     [...editorToolbar.querySelectorAll(".tool[data-tool]")].forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     currentTool = btn.getAttribute("data-tool");
-    rotateMode = false;
-    rotateBtn.classList.remove("active");
+    rotateMode = false; rotateBtn.classList.remove("active");
   });
 });
 rotateBtn.addEventListener("click", () => {
@@ -651,17 +690,25 @@ playtestBtn.addEventListener("click", () => {
   editorHint.style.display = "none";
   syncMobileControls();
   finished = false;
-  player1.x = spawnMarker.x; player1.y = spawnMarker.y; player1.vx = 0; player1.vy = 0; player1.dead = false;
+  player1.x = spawnMarker.x; player1.y = spawnMarker.y; player1.vx = 0; player1.vy = 0; player1.dead = false; player1.onGround = false;
   player2.dead = true; player2.isBot = false;
   startTimeP1 = Date.now();
 });
 clearBtn.addEventListener("click", () => {
-  // Fresh: floor + spawn + finish
   platforms = [ { ...persistentFloor } ];
   lavas = [];
   spawnMarker = { ...defaultSpawn };
   finishPad = { ...defaultFinishPad };
 });
+saveBtn.addEventListener("click", () => {
+  ensureFloor(); clampSpawnToFloor();
+  localStorage.setItem("towerLevel", JSON.stringify({ platforms, lavas, spawnMarker, finishPad }));
+  // Reflect in play menu
+  [...towerSeg.children].forEach(n => n.classList.remove("active"));
+  towerSeg.querySelector('[data-tower="custom"]').classList.add("active");
+  towerSelection = "custom";
+});
+loadBtn.addEventListener("click", () => { setCustomLevelFromStorage(); });
 exitCreateBtn.addEventListener("click", () => {
   mode = "menu"; menuLayer.style.display = "grid";
   editorToolbar.style.display = "none"; editorHint.style.display = "none";
@@ -682,69 +729,58 @@ function startCreateFresh() {
   syncMobileControls();
 }
 
-function screenToWorld(sx, sy) {
-  if (mode === "create") return [sx + editorCamX, sy + editorCamY];
-  return [sx, sy];
-}
+function screenToWorld(sx, sy) { return (mode === "create") ? [sx + editorCamX, sy + editorCamY] : [sx, sy]; }
 
-let dragState = { dragging: false, obj: null, offsetX: 0, offsetY: 0, arr: null, index: -1 };
+let dragState = { dragging: false, obj: null, offsetX: 0, offsetY: 0 };
 canvas.addEventListener("mousedown", e => {
   const rect = canvas.getBoundingClientRect();
   let [wx, wy] = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
 
-  if (mode === "create") {
-    // Rotate mode: toggle orientation of clicked object
-    if (rotateMode) {
-      const target = pickObjectAt(wx, wy);
-      if (target) { target.obj.rot90 = !target.obj.rot90; }
-      return;
-    }
+  if (mode !== "create") return;
 
-    // Spawn marker first
-    if (pointInRect(wx, wy, spawnMarker)) {
-      dragState = { dragging: true, obj: spawnMarker, offsetX: wx - spawnMarker.x, offsetY: wy - spawnMarker.y };
-      return;
-    }
-    // Finish pad
-    if (pointInRect(wx, wy, finishPad)) {
-      dragState = { dragging: true, obj: finishPad, offsetX: wx - finishPad.x, offsetY: wy - finishPad.y };
-      return;
-    }
-    // Existing objects
+  if (rotateMode) {
     const target = pickObjectAt(wx, wy);
-    if (target) {
-      dragState = { dragging: true, obj: target.obj, offsetX: wx - target.obj.x, offsetY: wy - target.obj.y, arr: target.arr, index: target.index };
-      return;
-    }
-    // Place new
-    wx = snap(wx, gridSnap); wy = snap(wy, gridSnap);
-    if (currentTool === "platform") platforms.push({ x: wx, y: wy, width: 120, height: 20 });
-    if (currentTool === "lava") lavas.push({ x: wx, y: wy, width: 60, height: 12 });
+    if (target) target.obj.rot90 = !target.obj.rot90;
+    return;
   }
+
+  // Spawn marker first
+  if (pointInRect(wx, wy, spawnMarker)) { dragState = { dragging: true, obj: spawnMarker, offsetX: wx - spawnMarker.x, offsetY: wy - spawnMarker.y }; return; }
+  // Finish pad
+  if (pointInRect(wx, wy, finishPad)) { dragState = { dragging: true, obj: finishPad, offsetX: wx - finishPad.x, offsetY: wy - finishPad.y }; return; }
+
+  const target = pickObjectAt(wx, wy);
+  if (target) { dragState = { dragging: true, obj: target.obj, offsetX: wx - target.obj.x, offsetY: wy - target.obj.y }; return; }
+
+  // Place new
+  wx = snap(wx, gridSnap); wy = snap(wy, gridSnap);
+  if (currentTool === "platform") platforms.push({ x: wx, y: wy, width: 120, height: 20, tint: 1 });
+  if (currentTool === "lava") lavas.push({ x: wx, y: wy, width: 60, height: 12 });
 });
 canvas.addEventListener("mousemove", e => {
   if (!dragState.dragging) return;
   const rect = canvas.getBoundingClientRect();
   let [wx, wy] = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-  const nx = snap(wx - dragState.offsetX, gridSnap);
-  const ny = snap(wy - dragState.offsetY, gridSnap);
-  dragState.obj.x = nx; dragState.obj.y = ny;
-  // Keep spawn on floor
-  if (dragState.obj === spawnMarker) spawnMarker.y = persistentFloor.y - 48;
+  dragState.obj.x = snap(wx - dragState.offsetX, gridSnap);
+  dragState.obj.y = snap(wy - dragState.offsetY, gridSnap);
+  if (dragState.obj === spawnMarker) clampSpawnToFloor();
 });
 window.addEventListener("mouseup", () => { dragState.dragging = false; });
 
 function pointInRect(x, y, r) { return x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height; }
 function pickObjectAt(x, y) {
   const pools = [
-    { arr: platforms, type: "platform" },
-    { arr: lavas, type: "lava" },
+    { arr: platforms },
+    { arr: lavas },
   ];
   for (const pool of pools) {
     for (let i = pool.arr.length - 1; i >= 0; i--) {
       const o = pool.arr[i];
       if (o.floor) continue;
-      if (pointInRect(x, y, o)) return { arr: pool.arr, index: i, obj: o };
+      const ox = o.rot90 ? (o.x - o.height) : o.x;
+      const ow = o.rot90 ? o.height : o.width;
+      const oh = o.rot90 ? o.width : o.height;
+      if (x >= ox && x <= ox + ow && y >= o.y && y <= o.y + oh) return { obj: o };
     }
   }
   return null;
@@ -830,7 +866,7 @@ function gameLoop() {
   if (mode === "play" || mode === "playtest") {
     const p2Active = (mode === "play" && (playMode === "multiplayer" || playMode === "bot"));
 
-    // Independent death/respawn; timer resets on death
+    // Independent death/respawn and timer reset
     if (player1.dead) { player1.x = spawnMarker.x; player1.y = spawnMarker.y; player1.vx = 0; player1.vy = 0; player1.dead = false; player1.onGround = false; startTimeP1 = Date.now(); finished = false; }
     if (p2Active && player2.dead) { player2.x = spawnMarker.x + 60; player2.y = spawnMarker.y; player2.vx = 0; player2.vy = 0; player2.dead = false; player2.onGround = false; startTimeP2 = Date.now(); finished = false; }
 
@@ -859,4 +895,3 @@ gameLoop();
 </script>
 </body>
 </html>
-```
