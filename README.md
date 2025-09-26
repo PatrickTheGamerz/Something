@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Tower Platformer — Full Build</title>
+  <title>Tower Platformer — Full Updated Build</title>
   <style>
     :root {
       --bg: #0e0f14;
@@ -15,16 +15,20 @@
       --accent2: #e4b423;
       --danger: #c63e3e;
       --ok: #27c39f;
+      --mc-size: 84px; /* mobile control default size */
     }
     html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; overflow:hidden; }
-    canvas { display:block; margin:0 auto; background:var(--canvas); }
+    canvas { display:block; margin:0 auto; background:var(--canvas); transition: transform 0.2s ease; transform-origin: center top; }
+
+    /* UI layers */
     .ui-layer { position:fixed; inset:0; display:grid; place-items:center; pointer-events:none; }
     .panel {
       pointer-events:auto; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px;
-      width:840px; max-width:calc(100% - 40px); box-shadow:0 20px 60px rgba(0,0,0,0.45);
+      width:860px; max-width:calc(100% - 40px); box-shadow:0 20px 60px rgba(0,0,0,0.45);
+      max-height: 80vh; overflow-y: auto; /* scrolling */
     }
     .panel h1 { margin:0 0 8px 0; }
-    .row { display:flex; gap:12px; align-items:center; margin:12px 0; }
+    .row { display:flex; gap:12px; align-items:center; margin:12px 0; flex-wrap: wrap; }
     .btn {
       background:#222637; border:1px solid var(--border); color:var(--text);
       border-radius:10px; padding:12px 14px; font-weight:600; cursor:pointer;
@@ -54,7 +58,7 @@
     /* Mobile controls */
     .mobile-controls { position:fixed; inset:0; pointer-events:none; }
     .mc-btn {
-      position:absolute; width:84px; height:84px; border-radius:50%;
+      position:absolute; width:var(--mc-size); height:var(--mc-size); border-radius:50%;
       background: radial-gradient(circle at 30% 30%, #2a3147, #181b26 60%);
       border:1px solid #3b4767; box-shadow: inset 0 6px 12px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.4);
       pointer-events:auto; display:flex; align-items:center; justify-content:center; color:#cfe2ff; font-weight:700; font-size:24px;
@@ -81,33 +85,45 @@
     <!-- Settings -->
     <div id="settingsBlock" class="sub" style="display:none;">
       <div class="row">
-        <div style="min-width:120px;">Device</div>
+        <div style="min-width:160px;">Device</div>
         <div class="segmented" id="deviceSeg">
           <div class="seg active" data-device="pc">PC</div>
           <div class="seg" data-device="mobile">Mobile</div>
         </div>
       </div>
       <div class="row">
-        <div style="min-width:120px;">Control overlay</div>
+        <div style="min-width:160px;">Control overlay</div>
         <div class="segmented" id="overlaySeg">
           <div class="seg active" data-overlay="off">Off</div>
           <div class="seg" data-overlay="on">On</div>
         </div>
       </div>
-      <div class="help">Mobile overlay shows on-screen arrows and jump for both players.</div>
+      <div class="row">
+        <div style="min-width:160px;">Smaller screen</div>
+        <div class="segmented" id="screenSeg">
+          <div class="seg active" data-screen="normal">Normal</div>
+          <div class="seg" data-screen="small">Smaller</div>
+        </div>
+      </div>
+      <div class="row">
+        <div style="min-width:160px;">Other player transparency</div>
+        <input type="range" id="alphaSlider" min="0.4" max="1" step="0.05" value="1" />
+        <span id="alphaLabel">1.00</span>
+      </div>
+      <div class="help">Smaller screen scales the canvas and mobile buttons to keep everything accessible.</div>
     </div>
 
     <!-- Play options -->
     <div id="playOptions" class="sub" style="display:none;">
       <div class="row">
-        <div style="min-width:140px;">Mode</div>
+        <div style="min-width:160px;">Mode</div>
         <div class="segmented" id="playModeSeg">
           <div class="seg active" data-playmode="multiplayer">Multiplayer</div>
           <div class="seg" data-playmode="bot">Bot</div>
         </div>
       </div>
-      <div class="row">
-        <div style="min-width:140px;">Bot difficulty</div>
+      <div id="botDiffRow" class="row" style="display:none;">
+        <div style="min-width:160px;">Bot difficulty</div>
         <div class="segmented" id="botDiffSeg">
           <div class="seg active" data-diff="normal">Normal</div>
           <div class="seg" data-diff="tryhard">Tryhard</div>
@@ -115,7 +131,7 @@
         </div>
       </div>
       <div class="row">
-        <div style="min-width:140px;">Tower</div>
+        <div style="min-width:160px;">Tower</div>
         <div class="segmented" id="towerSeg">
           <div class="seg active" data-tower="default">Default</div>
           <div class="seg" data-tower="custom">Custom (last saved)</div>
@@ -125,7 +141,7 @@
         <button class="btn primary" id="btnStartPlay">Start</button>
         <button class="btn" id="btnBackMenu">Back</button>
       </div>
-      <div class="help">Bot aims to reach the end of the tower. Split-screen activates automatically when players separate.</div>
+      <div class="help">Bot aims to reach the finish pad. Split-screen activates when players separate.</div>
     </div>
   </div>
 </div>
@@ -137,23 +153,24 @@
   <div class="tool" data-tool="collectible">Gem</div>
   <div class="tool" data-tool="checkpoint">Checkpoint</div>
   <div class="tool" id="gridSnapBtn">Snap: 20</div>
+  <div class="tool" id="playtestBtn">Playtest</div>
   <div class="tool" id="clearBtn">Clear</div>
   <div class="tool" id="saveBtn">Save</div>
   <div class="tool" id="loadBtn">Load</div>
   <div class="tool danger" id="exitCreateBtn">Exit</div>
 </div>
-<div class="hint" id="editorHint" style="display:none;">Create mode: Click to place, drag to move. WASD to pan. Spawn marker can be moved.</div>
+<div class="hint" id="editorHint" style="display:none;">Create: place with click, move with drag. WASD to pan. Spawn and Finish pad are movable.</div>
 
 <!-- Mobile controls -->
 <div class="mobile-controls" id="mobileControls" style="display:none;">
   <!-- Player 1 left side -->
   <div class="mc-btn" id="mcP1Left" style="left: 26px; bottom: 28px;">◀</div>
-  <div class="mc-btn" id="mcP1Right" style="left: 126px; bottom: 28px;">▶</div>
-  <div class="mc-btn" id="mcP1Jump" style="left: 76px; bottom: 118px;">⤒</div>
+  <div class="mc-btn" id="mcP1Right" style="left: calc(26px + var(--mc-size) + 16px); bottom: 28px;">▶</div>
+  <div class="mc-btn" id="mcP1Jump" style="left: calc(26px + var(--mc-size)/2 + 8px); bottom: calc(28px + var(--mc-size) + 18px);">⤒</div>
   <!-- Player 2 right side -->
-  <div class="mc-btn" id="mcP2Left" style="right: 126px; bottom: 28px;">◀</div>
+  <div class="mc-btn" id="mcP2Left" style="right: calc(26px + var(--mc-size) + 16px); bottom: 28px;">◀</div>
   <div class="mc-btn" id="mcP2Right" style="right: 26px; bottom: 28px;">▶</div>
-  <div class="mc-btn" id="mcP2Jump" style="right: 76px; bottom: 118px;">⤒</div>
+  <div class="mc-btn" id="mcP2Jump" style="right: calc(26px + var(--mc-size)/2 + 8px); bottom: calc(28px + var(--mc-size) + 18px);">⤒</div>
 </div>
 
 <script>
@@ -168,14 +185,16 @@ const SPLIT_DISTANCE = 480;
 const MERGE_DISTANCE = 360;
 
 /* ==== STATE ==== */
-let mode = "menu"; // "menu" | "play" | "create"
+let mode = "menu"; // "menu" | "play" | "create" | "playtest"
 let deviceType = "pc"; // "pc" | "mobile"
 let overlayEnabled = false;
+let screenMode = "normal"; // "normal" | "small"
 let playMode = "multiplayer"; // "multiplayer" | "bot"
 let botDifficulty = "normal"; // "normal" | "tryhard" | "master"
 let towerSelection = "default"; // "default" | "custom"
 let currentSplitMode = "merged";
 let gridSnap = 20;
+let otherAlpha = 1.0; // transparency for other player/bot
 
 /* ==== INPUT ==== */
 const keys = {};
@@ -191,6 +210,8 @@ const settingsBlock = document.getElementById("settingsBlock");
 const playOptions = document.getElementById("playOptions");
 const btnStartPlay = document.getElementById("btnStartPlay");
 const btnBackMenu = document.getElementById("btnBackMenu");
+const alphaSlider = document.getElementById("alphaSlider");
+const alphaLabel = document.getElementById("alphaLabel");
 
 function segmentedInit(segEl, value, attr, onChange) {
   [...segEl.children].forEach(ch => {
@@ -205,19 +226,28 @@ function segmentedInit(segEl, value, attr, onChange) {
 }
 const deviceSeg = document.getElementById("deviceSeg");
 const overlaySeg = document.getElementById("overlaySeg");
+const screenSeg = document.getElementById("screenSeg");
 const playModeSeg = document.getElementById("playModeSeg");
 const botDiffSeg = document.getElementById("botDiffSeg");
+const botDiffRow = document.getElementById("botDiffRow");
 const towerSeg = document.getElementById("towerSeg");
 
 segmentedInit(deviceSeg, deviceType, "data-device", v => deviceType = v);
 segmentedInit(overlaySeg, overlayEnabled ? "on" : "off", "data-overlay", v => overlayEnabled = (v === "on"));
-segmentedInit(playModeSeg, playMode, "data-playmode", v => playMode = v);
+segmentedInit(screenSeg, screenMode, "data-screen", v => { screenMode = v; applyScreenScale(); });
+segmentedInit(playModeSeg, playMode, "data-playmode", v => { playMode = v; botDiffRow.style.display = (playMode === "bot") ? "flex" : "none"; });
 segmentedInit(botDiffSeg, botDifficulty, "data-diff", v => botDifficulty = v);
 segmentedInit(towerSeg, towerSelection, "data-tower", v => towerSelection = v);
+
+alphaSlider.addEventListener("input", () => {
+  otherAlpha = parseFloat(alphaSlider.value);
+  alphaLabel.textContent = otherAlpha.toFixed(2);
+});
 
 btnPlay.addEventListener("click", () => {
   playOptions.style.display = "block";
   settingsBlock.style.display = "none";
+  botDiffRow.style.display = (playMode === "bot") ? "flex" : "none";
 });
 btnBackMenu.addEventListener("click", () => {
   playOptions.style.display = "none";
@@ -231,7 +261,7 @@ btnStartPlay.addEventListener("click", () => {
   mode = "play";
   menuLayer.style.display = "none";
   editorToolbar.style.display = "none";
-  document.getElementById("editorHint").style.display = "none";
+  editorHint.style.display = "none";
   resetPlayersToSpawn();
   syncMobileControls();
 });
@@ -244,7 +274,6 @@ const mcLayer = document.getElementById("mobileControls");
 function bindPress(btn, codes) {
   const down = e => { e.preventDefault(); codes.forEach(code => keys[code] = true); };
   const up = e => { e.preventDefault(); codes.forEach(code => keys[code] = false); };
-  // Touch + Mouse
   btn.addEventListener("touchstart", down, { passive:false });
   btn.addEventListener("touchend", up, { passive:false });
   btn.addEventListener("mousedown", down);
@@ -259,6 +288,16 @@ bindPress(document.getElementById("mcP2Jump"), ["ArrowUp"]);
 
 function syncMobileControls() {
   mcLayer.style.display = (deviceType === "mobile" && overlayEnabled && mode !== "menu") ? "block" : "none";
+}
+function applyScreenScale() {
+  const canvas = document.getElementById("gameCanvas");
+  if (screenMode === "small") {
+    canvas.style.transform = "scale(0.85)";
+    document.documentElement.style.setProperty("--mc-size", "64px");
+  } else {
+    canvas.style.transform = "scale(1)";
+    document.documentElement.style.setProperty("--mc-size", "84px");
+  }
 }
 
 /* ==== UTILS ==== */
@@ -276,6 +315,8 @@ class Player {
     this.speed = 5.2; this.jumpVelocity = -14.2; this.gravity = 0.8; this.maxFall = 18;
     this.onGround = false; this.controls = controls; this.dead = false;
     this.isBot = false;
+    this.lastSafe = { x, y }; // for backtracking
+    this.stuckTimer = 0;
   }
   get rect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
   update(platforms, hazards) {
@@ -302,7 +343,9 @@ class Player {
     }
 
     // Vertical
+    const prevY = this.y;
     this.y += this.vy;
+    const wasOnGround = this.onGround;
     this.onGround = false;
     for (const p of platforms) {
       if (rectsCollide(this.rect, p)) {
@@ -311,60 +354,98 @@ class Player {
       }
     }
 
+    // Hazards kill independently
+    for (const h of hazards) if (rectsCollide(this.rect, h)) this.dead = true;
+
+    // Update last safe standing spot
+    if (this.onGround) this.lastSafe = { x: this.x, y: this.y };
+
     // World bounds
     if (this.y > WORLD_HEIGHT) this.dead = true;
 
-    // Hazards
-    for (const h of hazards) if (rectsCollide(this.rect, h)) this.dead = true;
+    // Detect stuck (not moving vertically while pushing wall)
+    if (Math.abs(this.vx) > 0.1 && Math.abs(this.y - prevY) < 0.01 && !this.onGround) this.stuckTimer++;
+    else this.stuckTimer = 0;
   }
   botLogic(platforms, hazards) {
-    // Goal-driven heuristic bot aiming for endGoal.x
-    const speedScale = (botDifficulty === "normal" ? 0.9 : botDifficulty === "tryhard" ? 1.1 : 1.3);
-    const jumpBias = (botDifficulty === "normal" ? 0.03 : botDifficulty === "tryhard" ? 0.07 : 0.12);
-    this.vx = this.speed * speedScale; // always move right
+    // Heuristic pathing bot: can move left/right, avoid lava, backtrack if stuck/fallen.
+    const cfg = {
+      speedScale: (botDifficulty === "normal" ? 0.95 : botDifficulty === "tryhard" ? 1.15 : 1.3),
+      jumpBias: (botDifficulty === "normal" ? 0.02 : botDifficulty === "tryhard" ? 0.06 : 0.12),
+      perfectTiming: (botDifficulty === "master")
+    };
+    const goalX = finishPad.x + finishPad.width / 2;
+    const dx = goalX - (this.x + this.width / 2);
+    let dir = Math.sign(dx); // towards goal
 
-    // Look ahead for platform edge or hazard to jump
-    const aheadX = this.x + this.width + 8;
+    // Sense ground under feet
     const feetY = this.y + this.height + 2;
-
-    // Find current ground platform
     let ground = null;
     for (const p of platforms) {
       if (feetY >= p.y - 2 && feetY <= p.y + 10 && this.x + this.width/2 >= p.x && this.x + this.width/2 <= p.x + p.width) {
         ground = p; break;
       }
     }
-    const nearEdge = ground ? (aheadX > ground.x + ground.width - 10) : true;
 
-    // Detect next candidate platform within jump arc
-    const jumpReachX = 140 * speedScale;
-    const jumpReachY = 110; // vertical reach
-    let candidate = null;
-    for (const p of platforms) {
-      if (p.y + p.height < this.y + this.height && // above or level
-          p.x <= aheadX + jumpReachX && p.x + p.width >= aheadX && // within horizontal window
-          (this.y - p.y) <= jumpReachY + 40) {
-        candidate = p; break;
-      }
+    // If falling or dead, backtrack to last safe
+    if (!this.onGround && this.vy > 10) {
+      dir = Math.sign(this.lastSafe.x - this.x);
     }
 
-    // Hazard ahead?
+    // Lookahead ray to avoid hazards and detect edges
+    const aheadX = this.x + (dir > 0 ? this.width + 8 : -8);
     const frontRect = { x: aheadX, y: this.y + this.height - 6, width: 12, height: 12 };
     const hazardAhead = hazards.some(h => rectsCollide(frontRect, h));
+    const nearEdge = ground ? ((dir > 0 && aheadX > ground.x + ground.width - 10) || (dir < 0 && aheadX < ground.x + 10)) : true;
 
-    // Jump decisions
-    if (this.onGround && (nearEdge || candidate || hazardAhead || Math.random() < jumpBias)) {
+    // Find candidate platform within jump window (both left and right)
+    const jumpReachX = cfg.perfectTiming ? 180 : 140;
+    const jumpReachY = cfg.perfectTiming ? 130 : 110;
+    let candidate = null;
+    for (const p of platforms) {
+      const withinX = (dir > 0)
+        ? (p.x <= aheadX + jumpReachX && p.x + p.width >= aheadX)
+        : (p.x <= aheadX && p.x + p.width >= aheadX - jumpReachX);
+      const aboveOrLevel = (p.y + p.height <= this.y + this.height + 12);
+      const withinY = (this.y - p.y) <= jumpReachY + 40;
+      if (withinX && aboveOrLevel && withinY) { candidate = p; break; }
+    }
+
+    // Decide movement
+    this.vx = dir * this.speed * cfg.speedScale;
+
+    // Perfect edge-timed jumps (master) or heuristic jumps
+    const needJump = nearEdge || hazardAhead || !!candidate;
+    const randomJump = Math.random() < cfg.jumpBias;
+    const shouldJump = this.onGround && (needJump || randomJump);
+
+    // Master timing: jump exactly at platform edge or just before hazard
+    if (cfg.perfectTiming && this.onGround) {
+      const edgeThreshold = 6;
+      const atEdge = ground && ((dir > 0 && (ground.x + ground.width - (this.x + this.width)) < edgeThreshold) ||
+                                (dir < 0 && (this.x - ground.x) < edgeThreshold));
+      const hazardClose = hazards.some(h => {
+        const ahead = dir > 0 ? (h.x - (this.x + this.width)) : ((this.x) - (h.x + h.width));
+        const sameLevel = Math.abs((h.y) - (this.y + this.height)) < 16;
+        return ahead > 0 && ahead < 24 && sameLevel;
+      });
+      if (atEdge || hazardClose || candidate) {
+        this.vy = this.jumpVelocity; this.onGround = false;
+      }
+    } else if (shouldJump) {
       this.vy = this.jumpVelocity; this.onGround = false;
     }
 
-    // If close to end goal and below it, jump more
-    if (this.onGround && endGoal.x - this.x < 160 && this.y > endGoal.y + endGoal.height) {
-      this.vy = this.jumpVelocity; this.onGround = false;
+    // Backtrack if stuck (e.g., sliding under platform lip)
+    if (this.stuckTimer > 20 && this.onGround) {
+      dir = -dir; this.vx = dir * this.speed * (cfg.speedScale * 0.8);
+      if (Math.random() < 0.5) { this.vy = this.jumpVelocity; this.onGround = false; }
+      this.stuckTimer = 0;
     }
   }
-  draw(ctx) {
+  draw(ctx, alpha = 1.0) {
     ctx.save();
-    // Body (no shadow)
+    ctx.globalAlpha = alpha;
     const grd = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.height);
     grd.addColorStop(0, this.color); grd.addColorStop(1, "#0c0f14");
     ctx.fillStyle = grd; ctx.strokeStyle = "#0a0d12"; ctx.lineWidth = 2;
@@ -381,80 +462,85 @@ class Player {
   }
 }
 
-/* ==== WORLD (DEFAULT OBBY WITH FLOORS) ==== */
+/* ==== WORLD (DEFAULT: REACHABLE FLOORS) ==== */
+const persistentFloor = { x: 0, y: 2350, width: 1600, height: 50, floor: true };
+const defaultSpawn = { x: 100, y: 2302, width: 28, height: 32 }; // sits on floor (floor.y - player.height)
+const defaultFinishPad = { x: 1480, y: 540, width: 100, height: 24 }; // finish pad at top
+
 const defaultPlatforms = [
-  { x: 0, y: 2350, width: 1600, height: 50, floor: true }, // permanent floor
-  // Floor 1 (lighter gray)
+  { ...persistentFloor },
+  // Floor 1: gentle staircase (vertical delta ~80)
   { x: 160, y: 2220, width: 180, height: 20, floorColor: 1 },
-  { x: 420, y: 2140, width: 160, height: 20, floorColor: 1 },
-  { x: 680, y: 2060, width: 160, height: 20, floorColor: 1 },
-  { x: 940, y: 1980, width: 160, height: 20, floorColor: 1 },
-  { x: 1220, y: 1900, width: 160, height: 20, floorColor: 1 },
+  { x: 360, y: 2140, width: 160, height: 20, floorColor: 1 },
+  { x: 560, y: 2060, width: 160, height: 20, floorColor: 1 },
+  { x: 760, y: 1980, width: 160, height: 20, floorColor: 1 },
+  { x: 960, y: 1900, width: 160, height: 20, floorColor: 1 },
 
-  // Floor 2 (darker gray)
-  { x: 220, y: 1780, width: 180, height: 20, floorColor: 2 },
-  { x: 500, y: 1700, width: 160, height: 20, floorColor: 2 },
-  { x: 760, y: 1620, width: 160, height: 20, floorColor: 2 },
-  { x: 1040, y: 1540, width: 160, height: 20, floorColor: 2 },
-  { x: 1300, y: 1460, width: 160, height: 20, floorColor: 2 },
+  // Floor 2: a bit harder
+  { x: 240, y: 1780, width: 180, height: 20, floorColor: 2 },
+  { x: 470, y: 1700, width: 160, height: 20, floorColor: 2 },
+  { x: 720, y: 1620, width: 160, height: 20, floorColor: 2 },
+  { x: 980, y: 1540, width: 160, height: 20, floorColor: 2 },
+  { x: 1240, y: 1460, width: 160, height: 20, floorColor: 2 },
 
-  // Floor 3 (lighter again)
-  { x: 280, y: 1340, width: 180, height: 20, floorColor: 1 },
-  { x: 560, y: 1260, width: 160, height: 20, floorColor: 1 },
-  { x: 820, y: 1180, width: 160, height: 20, floorColor: 1 },
-  { x: 1080, y: 1100, width: 160, height: 20, floorColor: 1 },
-  { x: 1340, y: 1020, width: 160, height: 20, floorColor: 1 },
+  // Floor 3: tighter gaps, still jumpable (~100 up)
+  { x: 300, y: 1340, width: 180, height: 20, floorColor: 1 },
+  { x: 560, y: 1240, width: 160, height: 20, floorColor: 1 },
+  { x: 820, y: 1140, width: 160, height: 20, floorColor: 1 },
+  { x: 1080, y: 1040, width: 160, height: 20, floorColor: 1 },
 
-  // Floor 4 (dark)
-  { x: 340, y: 920, width: 180, height: 20, floorColor: 2 },
-  { x: 620, y: 840, width: 160, height: 20, floorColor: 2 },
-  { x: 880, y: 760, width: 160, height: 20, floorColor: 2 },
-  { x: 1140, y: 680, width: 160, height: 20, floorColor: 2 },
-  { x: 1400, y: 600, width: 160, height: 20, floorColor: 2 },
+  // Floor 4: nearing top
+  { x: 380, y: 920, width: 180, height: 20, floorColor: 2 },
+  { x: 660, y: 820, width: 160, height: 20, floorColor: 2 },
+  { x: 940, y: 720, width: 160, height: 20, floorColor: 2 },
+  { x: 1220, y: 620, width: 160, height: 20, floorColor: 2 },
 ];
 const defaultHazards = [
   { x: 520, y: 2335, width: 40, height: 15 },
   { x: 900, y: 1975, width: 40, height: 15 },
-  { x: 1080, y: 1535, width: 40, height: 15 },
+  { x: 1040, y: 1535, width: 40, height: 15 },
   { x: 1200, y: 1095, width: 40, height: 15 },
 ];
 const defaultCollectibles = [
   { x: 180, y: 2190, width: 20, height: 20 },
-  { x: 700, y: 2030, width: 20, height: 20 },
-  { x: 1240, y: 1870, width: 20, height: 20 },
-  { x: 540, y: 1680, width: 20, height: 20 },
-  { x: 840, y: 1160, width: 20, height: 20 },
+  { x: 580, y: 2050, width: 20, height: 20 },
+  { x: 980, y: 1890, width: 20, height: 20 },
+  { x: 740, y: 1610, width: 20, height: 20 },
+  { x: 860, y: 1130, width: 20, height: 20 },
 ];
 const defaultCheckpoints = [
-  { x: 700, y: 2030, width: 24, height: 28 },
-  { x: 1240, y: 1870, width: 24, height: 28 },
-  { x: 540, y: 1680, width: 24, height: 28 },
-  { x: 840, y: 1160, width: 24, height: 28 },
+  { x: 580, y: 2050, width: 24, height: 28 },
+  { x: 980, y: 1890, width: 24, height: 28 },
+  { x: 740, y: 1610, width: 24, height: 28 },
+  { x: 860, y: 1130, width: 24, height: 28 },
 ];
-const defaultSpawn = { x: 100, y: 2200, width: 28, height: 32 };
-const defaultEndGoal = { x: 1460, y: 540, width: 72, height: 72 };
 
 /* ==== ACTIVE LEVEL ==== */
-let platforms = []; let hazards = []; let collectibles = []; let checkpoints = [];
+let platforms = [];
+let hazards = [];
+let collectibles = [];
+let checkpoints = [];
 let spawnMarker = { ...defaultSpawn };
-let endGoal = { ...defaultEndGoal };
-
-// Persistent floor to always keep
-const persistentFloor = { x: 0, y: 2350, width: 1600, height: 50, floor: true };
+let finishPad = { ...defaultFinishPad };
 
 function ensureFloor() {
   const hasFloor = platforms.some(p => p.x === persistentFloor.x && p.y === persistentFloor.y && p.width === persistentFloor.width && p.height === persistentFloor.height);
   if (!hasFloor) platforms.unshift({ ...persistentFloor });
 }
-
+function clampSpawnToFloor() {
+  // Always keep spawn on top of floor
+  spawnMarker.x = clamp(spawnMarker.x, 0, WORLD_WIDTH - spawnMarker.width);
+  spawnMarker.y = persistentFloor.y - 48; // player height
+}
 function setDefaultLevel() {
   platforms = JSON.parse(JSON.stringify(defaultPlatforms));
   hazards = JSON.parse(JSON.stringify(defaultHazards));
   collectibles = JSON.parse(JSON.stringify(defaultCollectibles));
   checkpoints = JSON.parse(JSON.stringify(defaultCheckpoints));
   spawnMarker = { ...defaultSpawn };
-  endGoal = { ...defaultEndGoal };
+  finishPad = { ...defaultFinishPad };
   ensureFloor();
+  clampSpawnToFloor();
 }
 function setCustomLevelFromStorage() {
   const data = localStorage.getItem("towerLevel");
@@ -465,8 +551,9 @@ function setCustomLevelFromStorage() {
     collectibles = parsed.collectibles || [];
     checkpoints = parsed.checkpoints || [];
     spawnMarker = parsed.spawnMarker || { ...defaultSpawn };
-    endGoal = parsed.endGoal || { ...defaultEndGoal };
+    finishPad = parsed.finishPad || { ...defaultFinishPad };
     ensureFloor();
+    clampSpawnToFloor();
   } else {
     setDefaultLevel();
   }
@@ -518,30 +605,36 @@ function drawCollectible(ctx, c) {
   ctx.restore();
 }
 function drawCheckpoint(ctx, cp) {
-  ctx.save();
-  const g = ctx.createLinearGradient(cp.x, cp.y, cp.x, cp.y + cp.height);
-  g.addColorStop(0, "#5acef7"); g.addColorStop(1, "#2a88bf");
-  ctx.fillStyle = g; ctx.fillRect(cp.x, cp.y, cp.width, cp.height);
-  ctx.fillStyle = "#fff"; ctx.font = "bold 11px sans-serif"; ctx.fillText("✔", cp.x + 5, cp.y + 18);
-  ctx.restore();
+  // Invisible in play; visible in create
+  if (mode === "create") {
+    ctx.save();
+    const g = ctx.createLinearGradient(cp.x, cp.y, cp.x, cp.y + cp.height);
+    g.addColorStop(0, "#5acef7"); g.addColorStop(1, "#2a88bf");
+    ctx.fillStyle = g; ctx.fillRect(cp.x, cp.y, cp.width, cp.height);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 11px sans-serif"; ctx.fillText("✔", cp.x + 5, cp.y + 18);
+    ctx.restore();
+  }
 }
 function drawSpawnMarker(ctx, sp) {
-  ctx.save();
-  const g = ctx.createLinearGradient(sp.x, sp.y, sp.x, sp.y + sp.height);
-  g.addColorStop(0, "#3aeeb4"); g.addColorStop(1, "#1aa57e");
-  ctx.fillStyle = g;
-  ctx.fillRect(sp.x, sp.y, sp.width, sp.height);
-  ctx.fillStyle = "#062a22";
-  ctx.font = "bold 11px sans-serif";
-  ctx.fillText("SP", sp.x + 6, sp.y + 20);
-  ctx.restore();
+  // Visible only in create mode
+  if (mode === "create") {
+    ctx.save();
+    const g = ctx.createLinearGradient(sp.x, sp.y, sp.x, sp.y + sp.height);
+    g.addColorStop(0, "#3aeeb4"); g.addColorStop(1, "#1aa57e");
+    ctx.fillStyle = g;
+    ctx.fillRect(sp.x, sp.y, sp.width, sp.height);
+    ctx.fillStyle = "#062a22";
+    ctx.font = "bold 11px sans-serif";
+    ctx.fillText("SP", sp.x + 6, sp.y + 20);
+    ctx.restore();
+  }
 }
-function drawEndGoal(ctx, eg) {
+function drawFinishPad(ctx, fp) {
   ctx.save();
-  const g = ctx.createLinearGradient(eg.x, eg.y, eg.x, eg.y + eg.height);
-  g.addColorStop(0, "#ffd700"); g.addColorStop(1, "#d2ad00");
-  ctx.fillStyle = g; ctx.fillRect(eg.x, eg.y, eg.width, eg.height);
-  ctx.fillStyle = "#000"; ctx.font = "bold 14px sans-serif"; ctx.fillText("END", eg.x + 14, eg.y + 40);
+  const g = ctx.createLinearGradient(fp.x, fp.y, fp.x, fp.y + fp.height);
+  g.addColorStop(0, "#9bff9b"); g.addColorStop(1, "#2bbf57");
+  ctx.fillStyle = g; ctx.fillRect(fp.x, fp.y, fp.width, fp.height);
+  ctx.strokeStyle = "#0b4f2b"; ctx.strokeRect(fp.x, fp.y, fp.width, fp.height);
   ctx.restore();
 }
 function drawWorld(ctx) {
@@ -549,8 +642,8 @@ function drawWorld(ctx) {
   for (const hazard of hazards) drawHazard(ctx, hazard);
   for (const c of collectibles) drawCollectible(ctx, c);
   for (const cp of checkpoints) drawCheckpoint(ctx, cp);
+  drawFinishPad(ctx, finishPad);
   drawSpawnMarker(ctx, spawnMarker);
-  drawEndGoal(ctx, endGoal);
 }
 
 /* ==== CAMERA ==== */
@@ -576,8 +669,8 @@ function calcMergedCamera(p1, p2) {
 }
 
 /* ==== PLAYERS ==== */
-const player1 = new Player(100, 2200, "#23b4e4", { left: "KeyA", right: "KeyD", jump: "KeyW" });
-const player2 = new Player(160, 2200, "#e4b423", { left: "ArrowLeft", right: "ArrowRight", jump: "ArrowUp" });
+const player1 = new Player(defaultSpawn.x, defaultSpawn.y, "#23b4e4", { left: "KeyA", right: "KeyD", jump: "KeyW" });
+const player2 = new Player(defaultSpawn.x + 60, defaultSpawn.y, "#e4b423", { left: "ArrowLeft", right: "ArrowRight", jump: "ArrowUp" });
 
 function resetPlayersToSpawn() {
   player1.x = spawnMarker.x; player1.y = spawnMarker.y; player1.vx = 0; player1.vy = 0; player1.dead = false; player1.onGround = false;
@@ -586,22 +679,20 @@ function resetPlayersToSpawn() {
 }
 
 /* ==== HUD ==== */
-function drawHud(player, x, y) {
+function drawHud(player, x, y, label) {
   ctx.save();
-  ctx.globalAlpha = 0.88; ctx.fillStyle = "#111"; ctx.fillRect(x - 10, y - 28, 180, 44);
+  ctx.globalAlpha = 0.88; ctx.fillStyle = "#111"; ctx.fillRect(x - 10, y - 28, 220, 48);
   ctx.globalAlpha = 1.0; ctx.fillStyle = "#fff"; ctx.font = "16px monospace";
-  ctx.fillText("X:" + Math.round(player.x) + " Y:" + Math.round(player.y), x, y);
-  ctx.fillText("Mode: " + (player.isBot ? ("BOT-" + botDifficulty.toUpperCase()) : "PLAYER"), x, y + 22);
+  ctx.fillText(label + " X:" + Math.round(player.x) + " Y:" + Math.round(player.y), x, y);
+  ctx.fillText("State: " + (player.dead ? "DEAD" : player.onGround ? "GROUND" : "AIR"), x, y + 22);
   ctx.restore();
 }
 function drawPlayHUD() {
-  drawHud(player1, 28, 36);
-  if (mode === "play" && playMode === "multiplayer") {
+  drawHud(player1, 28, 36, "P1");
+  if (mode === "play") {
     const hx = currentSplitMode === "split" ? VIEW_WIDTH + 28 : 280;
-    drawHud(player2, hx, 36);
-  } else if (mode === "play" && playMode === "bot") {
-    const hx = currentSplitMode === "split" ? VIEW_WIDTH + 28 : 280;
-    drawHud(player2, hx, 36);
+    const label = (playMode === "bot") ? ("BOT-" + botDifficulty.toUpperCase()) : "P2";
+    drawHud(player2, hx, 36, label);
   }
 }
 
@@ -620,30 +711,34 @@ document.getElementById("gridSnapBtn").addEventListener("click", () => {
   gridSnap = (gridSnap === 20 ? 40 : gridSnap === 40 ? 0 : 20);
   document.getElementById("gridSnapBtn").textContent = "Snap: " + (gridSnap || "off");
 });
+document.getElementById("playtestBtn").addEventListener("click", () => {
+  mode = "playtest";
+  editorToolbar.style.display = "none";
+  editorHint.style.display = "none";
+  ensureFloor(); clampSpawnToFloor();
+  syncMobileControls();
+  // Single player only in playtest, independent of bot/multiplayer
+  player2.dead = true; player2.isBot = false;
+  player1.x = spawnMarker.x; player1.y = spawnMarker.y; player1.vx = 0; player1.vy = 0; player1.dead = false; player1.onGround = false;
+});
 document.getElementById("clearBtn").addEventListener("click", () => {
-  // Fresh level: only floor + spawn marker + default endGoal
+  // Fresh level: floor + spawn + finish pad
   platforms = [ { ...persistentFloor } ];
   hazards = []; collectibles = []; checkpoints = [];
-  spawnMarker = { ...defaultSpawn };
-  endGoal = { ...defaultEndGoal };
+  spawnMarker = { ...defaultSpawn }; clampSpawnToFloor();
+  finishPad = { ...defaultFinishPad };
 });
 document.getElementById("saveBtn").addEventListener("click", () => {
-  ensureFloor();
-  localStorage.setItem("towerLevel", JSON.stringify({ platforms, hazards, collectibles, checkpoints, spawnMarker, endGoal }));
-  // Auto-enable custom in play menu
+  ensureFloor(); clampSpawnToFloor();
+  localStorage.setItem("towerLevel", JSON.stringify({ platforms, hazards, collectibles, checkpoints, spawnMarker, finishPad }));
   [...towerSeg.children].forEach(n => n.classList.remove("active"));
   towerSeg.querySelector('[data-tower="custom"]').classList.add("active");
   towerSelection = "custom";
 });
-document.getElementById("loadBtn").addEventListener("click", () => {
-  setCustomLevelFromStorage();
-});
+document.getElementById("loadBtn").addEventListener("click", () => { setCustomLevelFromStorage(); });
 document.getElementById("exitCreateBtn").addEventListener("click", () => {
-  // Return to menu
-  mode = "menu";
-  menuLayer.style.display = "grid";
-  editorToolbar.style.display = "none";
-  editorHint.style.display = "none";
+  mode = "menu"; menuLayer.style.display = "grid";
+  editorToolbar.style.display = "none"; editorHint.style.display = "none";
   syncMobileControls();
 });
 
@@ -653,71 +748,71 @@ function startCreateFresh() {
   menuLayer.style.display = "none";
   editorToolbar.style.display = "flex";
   editorHint.style.display = "block";
-  // Start fresh: floor + spawn + end
+  // Start fresh: floor + spawn + finish pad
   platforms = [ { ...persistentFloor } ];
   hazards = []; collectibles = []; checkpoints = [];
-  spawnMarker = { ...defaultSpawn };
-  endGoal = { ...defaultEndGoal };
+  spawnMarker = { ...defaultSpawn }; clampSpawnToFloor();
+  finishPad = { ...defaultFinishPad };
   editorCamX = 0; editorCamY = 0;
   syncMobileControls();
 }
-
 function screenToWorld(sx, sy) {
-  // If in create, account for editor camera
   if (mode === "create") return [sx + editorCamX, sy + editorCamY];
-  // In play, camera transforms are handled by translate; here we place raw if needed
   return [sx, sy];
 }
-
-// Create mode interactions: place & move (including spawn marker)
+// Create mode interactions: place & move (including spawn and finish pad)
 let dragState = { dragging: false, obj: null, offsetX: 0, offsetY: 0, arr: null, index: -1 };
 canvas.addEventListener("mousedown", e => {
-  if (mode !== "create") return;
   const rect = canvas.getBoundingClientRect();
   let [wx, wy] = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-
-  // Hit-test spawn marker first
-  if (wx >= spawnMarker.x && wx <= spawnMarker.x + spawnMarker.width &&
-      wy >= spawnMarker.y && wy <= spawnMarker.y + spawnMarker.height) {
-    dragState = { dragging: true, obj: spawnMarker, offsetX: wx - spawnMarker.x, offsetY: wy - spawnMarker.y, arr: null, index: -1 };
-    return;
-  }
-
-  // Hit-test existing objects (skip persistent floor)
-  const pools = [
-    { arr: platforms, type: "platform" },
-    { arr: hazards, type: "hazard" },
-    { arr: collectibles, type: "collectible" },
-    { arr: checkpoints, type: "checkpoint" },
-  ];
-  for (const pool of pools) {
-    for (let i = pool.arr.length - 1; i >= 0; i--) {
-      const o = pool.arr[i];
-      if (o.floor) continue;
-      if (wx >= o.x && wx <= o.x + o.width && wy >= o.y && wy <= o.y + o.height) {
-        dragState = { dragging: true, obj: o, offsetX: wx - o.x, offsetY: wy - o.y, arr: pool.arr, index: i };
-        return;
+  if (mode === "create") {
+    // Hit-test spawn marker first
+    if (wx >= spawnMarker.x && wx <= spawnMarker.x + spawnMarker.width &&
+        wy >= spawnMarker.y && wy <= spawnMarker.y + spawnMarker.height) {
+      dragState = { dragging: true, obj: spawnMarker, offsetX: wx - spawnMarker.x, offsetY: wy - spawnMarker.y, arr: null, index: -1 };
+      return;
+    }
+    // Hit-test finish pad next
+    if (wx >= finishPad.x && wx <= finishPad.x + finishPad.width &&
+        wy >= finishPad.y && wy <= finishPad.y + finishPad.height) {
+      dragState = { dragging: true, obj: finishPad, offsetX: wx - finishPad.x, offsetY: wy - finishPad.y, arr: null, index: -1 };
+      return;
+    }
+    // Hit-test existing objects (skip persistent floor)
+    const pools = [
+      { arr: platforms, type: "platform" },
+      { arr: hazards, type: "hazard" },
+      { arr: collectibles, type: "collectible" },
+      { arr: checkpoints, type: "checkpoint" },
+    ];
+    for (const pool of pools) {
+      for (let i = pool.arr.length - 1; i >= 0; i--) {
+        const o = pool.arr[i];
+        if (o.floor) continue;
+        if (wx >= o.x && wx <= o.x + o.width && wy >= o.y && wy <= o.y + o.height) {
+          dragState = { dragging: true, obj: o, offsetX: wx - o.x, offsetY: wy - o.y, arr: pool.arr, index: i };
+          return;
+        }
       }
     }
+    // Place new object
+    wx = snap(wx, gridSnap); wy = snap(wy, gridSnap);
+    if (currentTool === "platform") platforms.push({ x: wx, y: wy, width: 120, height: 20 });
+    if (currentTool === "hazard") hazards.push({ x: wx, y: wy, width: 40, height: 15 });
+    if (currentTool === "collectible") collectibles.push({ x: wx, y: wy, width: 20, height: 20 });
+    if (currentTool === "checkpoint") checkpoints.push({ x: wx, y: wy, width: 24, height: 28 });
   }
-
-  // Place new object
-  wx = snap(wx, gridSnap); wy = snap(wy, gridSnap);
-  if (currentTool === "platform") platforms.push({ x: wx, y: wy, width: 120, height: 20 });
-  if (currentTool === "hazard") hazards.push({ x: wx, y: wy, width: 40, height: 15 });
-  if (currentTool === "collectible") collectibles.push({ x: wx, y: wy, width: 20, height: 20 });
-  if (currentTool === "checkpoint") checkpoints.push({ x: wx, y: wy, width: 24, height: 28 });
 });
 canvas.addEventListener("mousemove", e => {
-  if (mode !== "create" || !dragState.dragging) return;
+  if (!dragState.dragging) return;
   const rect = canvas.getBoundingClientRect();
   let [wx, wy] = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
   const nx = snap(wx - dragState.offsetX, gridSnap);
   const ny = snap(wy - dragState.offsetY, gridSnap);
   dragState.obj.x = nx; dragState.obj.y = ny;
+  if (dragState.obj === spawnMarker) clampSpawnToFloor();
 });
 window.addEventListener("mouseup", () => { dragState.dragging = false; });
-
 // Create mode camera pan: WASD keys
 function updateEditorCamera() {
   const pan = 12;
@@ -726,8 +821,7 @@ function updateEditorCamera() {
   if (keys["KeyW"]) editorCamY = clamp(editorCamY - pan, 0, WORLD_HEIGHT - CANVAS_HEIGHT);
   if (keys["KeyS"]) editorCamY = clamp(editorCamY + pan, 0, WORLD_HEIGHT - CANVAS_HEIGHT);
 }
-
-/* ==== WORLD DRAW WRAPPER (CREATE CAMERA) ==== */
+/* ==== CREATE DRAW WRAPPER ==== */
 function drawCreateView() {
   ctx.save();
   ctx.translate(-editorCamX, -editorCamY);
@@ -746,7 +840,7 @@ function drawPlaySplitOrMerged() {
     ctx.beginPath(); ctx.rect(0, 0, VIEW_WIDTH, VIEW_HEIGHT); ctx.clip();
     let [cx1, cy1] = calcCamera(player1.x + player1.width / 2, player1.y + player1.height / 2);
     ctx.translate(-cx1, -cy1);
-    drawWorld(ctx); player1.draw(ctx); player2.draw(ctx);
+    drawWorld(ctx); player1.draw(ctx); player2.draw(ctx, otherAlpha);
     ctx.restore();
 
     // Divider
@@ -758,7 +852,7 @@ function drawPlaySplitOrMerged() {
     ctx.beginPath(); ctx.rect(VIEW_WIDTH, 0, VIEW_WIDTH, VIEW_HEIGHT); ctx.clip();
     let [cx2, cy2] = calcCamera(player2.x + player2.width / 2, player2.y + player2.height / 2);
     ctx.translate(-cx2 + VIEW_WIDTH, -cy2);
-    drawWorld(ctx); player2.draw(ctx); player1.draw(ctx);
+    drawWorld(ctx); player2.draw(ctx, otherAlpha); player1.draw(ctx);
     ctx.restore();
   } else {
     // Single view (merged or single player)
@@ -768,35 +862,24 @@ function drawPlaySplitOrMerged() {
     ctx.translate(-cx, -cy);
     drawWorld(ctx);
     player1.draw(ctx);
-    if (p2Active) player2.draw(ctx);
+    if (p2Active) player2.draw(ctx, otherAlpha);
     ctx.restore();
   }
 }
 
-/* ==== BOT GOAL CHECK ==== */
-let botReachedGoal = false;
-function checkEndGoal() {
-  const goalRect = endGoal;
-  if (rectsCollide(player1.rect, goalRect)) {
-    // Simple feedback: flash a banner
+/* ==== FINISH CHECK ==== */
+function checkFinish() {
+  const goalRect = finishPad;
+  const p1Finished = rectsCollide(player1.rect, goalRect);
+  const p2Finished = rectsCollide(player2.rect, goalRect);
+  if (p1Finished || (playMode === "bot" && p2Finished)) {
     ctx.save();
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = "#112";
     ctx.fillRect( CANVAS_WIDTH/2 - 160, 20, 320, 40 );
-    ctx.fillStyle = "#ffd700";
+    ctx.fillStyle = "#9bff9b";
     ctx.font = "bold 20px monospace";
-    ctx.fillText("Player reached END!", CANVAS_WIDTH/2 - 145, 46);
-    ctx.restore();
-  }
-  if (playMode === "bot" && rectsCollide(player2.rect, goalRect)) {
-    botReachedGoal = true;
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = "#112";
-    ctx.fillRect( CANVAS_WIDTH/2 - 160, 68, 320, 40 );
-    ctx.fillStyle = "#8ef77a";
-    ctx.font = "bold 20px monospace";
-    ctx.fillText("Bot reached END!", CANVAS_WIDTH/2 - 130, 94);
+    ctx.fillText((p1Finished ? "Player" : "Bot") + " finished the tower!", CANVAS_WIDTH/2 - 150, 46);
     ctx.restore();
   }
 }
@@ -805,17 +888,21 @@ function checkEndGoal() {
 function gameLoop() {
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  if (mode === "play") {
-    if (player1.dead) resetPlayersToSpawn();
-    if ((playMode === "multiplayer" || playMode === "bot") && player2.dead) resetPlayersToSpawn();
+  if (mode === "play" || mode === "playtest") {
+    const p2Active = (mode === "play" && (playMode === "multiplayer" || playMode === "bot"));
+    // Independent death/respawn
+    if (player1.dead) { player1.x = spawnMarker.x; player1.y = spawnMarker.y; player1.vx = 0; player1.vy = 0; player1.dead = false; player1.onGround = false; }
+    if (p2Active && player2.dead) { player2.x = spawnMarker.x + 60; player2.y = spawnMarker.y; player2.vx = 0; player2.vy = 0; player2.dead = false; player2.onGround = false; }
 
     player1.update(platforms, hazards);
-    if (playMode === "bot") { player2.isBot = true; player2.update(platforms, hazards); }
-    else if (playMode === "multiplayer") { player2.isBot = false; player2.update(platforms, hazards); }
+    if (p2Active) {
+      player2.isBot = (playMode === "bot");
+      player2.update(platforms, hazards);
+    }
 
     drawPlaySplitOrMerged();
     drawPlayHUD();
-    checkEndGoal();
+    checkFinish();
   }
 
   if (mode === "create") {
@@ -830,6 +917,7 @@ function gameLoop() {
 setDefaultLevel();
 menuLayer.style.display = "grid";
 syncMobileControls();
+applyScreenScale();
 resetPlayersToSpawn();
 gameLoop();
 </script>
