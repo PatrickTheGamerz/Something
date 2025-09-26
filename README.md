@@ -2,250 +2,53 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Two-Player Platformer Split Screen</title>
+  <title>Tower Platformer</title>
   <style>
-    body { background: #223; margin: 0; overflow: hidden; }
-    #gameCanvas { background: #444; display: block; margin: 0 auto; }
+    canvas {
+      background: #222;
+      display: block;
+      margin: 0 auto;
+    }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="1024" height="480"></canvas>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  
+  <!-- Import Player logic -->
+  <script type="module">
+    import { Player } from './Player.js';
 
-  <!-- Bring in player/input logic -->
-  <script src="Players.html"></script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
 
-  <script>
-  // ==== CONFIGURATION ====
-  const CANVAS_WIDTH = 1024;
-  const CANVAS_HEIGHT = 480;
-  const VIEW_WIDTH = CANVAS_WIDTH / 2;
-  const VIEW_HEIGHT = CANVAS_HEIGHT;
-  const WORLD_WIDTH = 2000;
-  const WORLD_HEIGHT = 1000;
-  const SPLIT_DISTANCE = 420;
-  const MERGE_DISTANCE = 340;
+    // Simple level floor
+    const floorY = 550;
 
-  // ==== UTILITY FUNCTIONS ====
-  function clamp(val, min, max) {
-    return Math.max(min, Math.min(val, max));
-  }
-  function rectsCollide(a, b) {
-    return (
-      a.x < b.x + b.width &&
-      a.x + a.width > b.x &&
-      a.y < b.y + b.height &&
-      a.y + a.height > b.y
-    );
-  }
+    // Create player
+    const player = new Player(100, floorY - 50);
 
-  // ==== MAP/LAYOUT DEFINITION ====
-  const platforms = [
-    { x: 0, y: 450, width: 2000, height: 50 },
-    { x: 100, y: 370, width: 250, height: 20 },
-    { x: 270, y: 300, width: 120, height: 16 },
-    { x: 400, y: 250, width: 130, height: 16 },
-    { x: 650, y: 320, width: 140, height: 18 },
-    { x: 900, y: 390, width: 80, height: 18 },
-    { x: 1100, y: 340, width: 150, height: 16 },
-    { x: 1400, y: 290, width: 120, height: 18 },
-    { x: 1500, y: 220, width: 100, height: 16 },
-    { x: 650, y: 220, width: 18, height: 100 },
-    { x: 1680, y: 100, width: 170, height: 18 },
-  ];
-  const hazards = [
-    { x: 500, y: 465, width: 36, height: 15 },
-    { x: 1190, y: 465, width: 36, height: 15 },
-    { x: 1520, y: 465, width: 40, height: 15 },
-  ];
-  const collectibles = [
-    { x: 170, y: 340, width: 20, height: 20 },
-    { x: 450, y: 225, width: 20, height: 20 },
-    { x: 680, y: 297, width: 20, height: 20 },
-    { x: 1450, y: 267, width: 20, height: 20 },
-    { x: 1710, y: 75, width: 20, height: 20 },
-  ];
-  const checkpoints = [
-    { x: 330, y: 325, width: 24, height: 28 },
-    { x: 1120, y: 308, width: 24, height: 28 },
-    { x: 1515, y: 186, width: 24, height: 28 },
-  ];
+    // Input handling
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
 
-  function drawPlatform(ctx, p) {
-    ctx.fillStyle = "#666";
-    ctx.fillRect(p.x, p.y, p.width, p.height);
-    ctx.strokeStyle = "#333";
-    ctx.strokeRect(p.x, p.y, p.width, p.height);
-  }
+    function gameLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  function drawHazard(ctx, h) {
-    ctx.fillStyle = "#b43a3a";
-    ctx.fillRect(h.x, h.y, h.width, h.height);
-    ctx.strokeStyle = "#fff";
-    ctx.beginPath();
-    ctx.moveTo(h.x, h.y + h.height);
-    ctx.lineTo(h.x + h.width/2, h.y);
-    ctx.lineTo(h.x + h.width, h.y + h.height);
-    ctx.stroke();
-  }
+      // Update player
+      player.update(keys, floorY);
 
-  function drawCollectible(ctx, c) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(c.x+c.width/2, c.y+c.height/2, 9, 0, 2*Math.PI);
-    ctx.fillStyle = "#eeca3a";
-    ctx.fill();
-    ctx.strokeStyle = "#e5cc77";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.restore();
-  }
+      // Draw floor
+      ctx.fillStyle = '#444';
+      ctx.fillRect(0, floorY, canvas.width, canvas.height - floorY);
 
-  function drawCheckpoint(ctx, cp) {
-    ctx.save();
-    ctx.fillStyle = "#4ab3ed";
-    ctx.fillRect(cp.x, cp.y, cp.width, cp.height);
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 11px sans-serif";
-    ctx.fillText("✔", cp.x+5, cp.y+18);
-    ctx.restore();
-  }
+      // Draw player
+      player.draw(ctx);
 
-  // ==== CAMERA LOGIC ====
-  function getSplitMode(p1, p2) {
-    const dx = (p1.x + p1.width/2) - (p2.x + p2.width/2);
-    const dy = (p1.y + p1.height/2) - (p2.y + p2.height/2);
-    const dist = Math.hypot(dx, dy);
-    if (dist > SPLIT_DISTANCE) return "split";
-    else if (dist < MERGE_DISTANCE) return "merged";
-    else return currentSplitMode;
-  }
-
-  function calcCamera(posx, posy) {
-    let camX = Math.round(posx - VIEW_WIDTH/2);
-    let camY = Math.round(posy - VIEW_HEIGHT/2);
-    camX = clamp(camX, 0, WORLD_WIDTH - VIEW_WIDTH);
-    camY = clamp(camY, 0, WORLD_HEIGHT - VIEW_HEIGHT);
-    return [camX, camY];
-  }
-
-  function calcMergedCamera(p1, p2) {
-    let mx = ((p1.x + p1.width/2) + (p2.x + p2.width/2))/2;
-    let my = ((p1.y + p1.height/2) + (p2.y + p2.height/2))/2;
-    return calcCamera(mx, my);
-  }
-
-  // ==== GAME INITIALIZATION ====
-  const canvas = document.getElementById('gameCanvas');
-  const ctx = canvas.getContext('2d');
-
-  const player1 = new Player(100, 400, "#23b4e4", {
-    left: "KeyA", right: "KeyD", up: "KeyW", down: "KeyS", jump: "KeyW"
-  });
-  const player2 = new Player(160, 400, "#e4b423", {
-    left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown", jump: "ArrowUp"
-  });
-
-  let allCollectibles = collectibles.map(c => ({ ...c }));
-  let currentSplitMode = "merged";
-
-  function resetCollectibles() {
-    allCollectibles = collectibles.map(c => ({ ...c }));
-    player1.collected = 0;
-    player2.collected = 0;
-  }
-
-  // ==== GAME LOOP ====
-  function gameLoop() {
-    if (player1.dead) { player1.respawn(); resetCollectibles(); }
-    if (player2.dead) { player2.respawn(); resetCollectibles(); }
-
-    player1.update(platforms, hazards, allCollectibles, checkpoints);
-    player2.update(platforms, hazards, allCollectibles, checkpoints);
-
-    currentSplitMode = getSplitMode(player1, player2);
-
-    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    if (currentSplitMode === "split") {
-      // Left view
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
-      ctx.clip();
-      let [cx1, cy1] = calcCamera(player1.x + player1.width/2, player1.y + player1.height/2);
-      ctx.translate(-cx1, -cy1);
-      drawWorld(ctx);
-      player1.draw(ctx);
-      player2.draw(ctx);
-      ctx.restore();
-
-      // Divider
-      ctx.save();
-      ctx.strokeStyle = "#222";
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(VIEW_WIDTH, 0); ctx.lineTo(VIEW_WIDTH, VIEW_HEIGHT);
-      ctx.stroke();
-      ctx.restore();
-
-      // Right view
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(VIEW_WIDTH, 0, VIEW_WIDTH, VIEW_HEIGHT);
-      ctx.clip();
-      let [cx2, cy2] = calcCamera(player2.x + player2.width/2, player2.y + player2.height/2);
-      ctx.translate(-cx2 + VIEW_WIDTH, -cy2);
-      drawWorld(ctx);
-      player2.draw(ctx);
-      player1.draw(ctx); // draw the other player as secondary
-      ctx.restore();
-
-      // HUD overlays for each side
-      drawHud(player1, 28, 36);
-      drawHud(player2, VIEW_WIDTH + 28, 36);
-
-    } else {
-      // Merged view
-      ctx.save();
-      let [cx, cy] = calcMergedCamera(player1, player2);
-      ctx.translate(-cx, -cy);
-      drawWorld(ctx);
-      player1.draw(ctx);
-      player2.draw(ctx);
-      ctx.restore();
-
-      drawHud(player1, 28, 36);
-      drawHud(player2, 28 + 240, 36);
+      requestAnimationFrame(gameLoop);
     }
 
-    requestAnimationFrame(gameLoop);
-  }
-
-  function drawWorld(ctx) {
-    for (const plat of platforms) drawPlatform(ctx, plat);
-    for (const hazard of hazards) drawHazard(ctx, hazard);
-    for (const c of allCollectibles) drawCollectible(ctx, c);
-    for (const cp of checkpoints) drawCheckpoint(ctx, cp);
-  }
-
-  function drawHud(player, x, y) {
-    ctx.save();
-    ctx.globalAlpha = 0.88;
-    ctx.fillStyle = "#111";
-    ctx.fillRect(x-10, y-28, 102, 44);
-    ctx.globalAlpha = 1.0;
-    ctx.fillStyle = "#fff";
-    ctx.font = "18px monospace";
-    ctx.fillText("Collected: " + player.collected, x, y);
-    ctx.fillText("Checkpoint: " +
-      Math.round(player.checkpoint.x) + "," + Math.round(player.checkpoint.y),
-      x, y+24);
-    ctx.restore();
-  }
-
-  // ==== START GAME ====
-  gameLoop();
-
+    gameLoop();
   </script>
 </body>
 </html>
@@ -275,175 +78,51 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Players Module</title>
-</head>
-<body>
-<script>
-// ==== INPUT HANDLING ====
-const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true; });
-window.addEventListener('keyup', e => { keys[e.code] = false; });
-
-// ==== PLAYER CLASS ====
-class Player {
-  constructor(x, y, color, controls) {
+export class Player {
+  constructor(x, y) {
     this.x = x;
     this.y = y;
-    this.width = 36;
-    this.height = 48;
-    this.color = color;
-    this.vx = 0;
-    this.vy = 0;
-    this.speed = 5.2;
-    this.jumpVelocity = -13.7;
-    this.maxFall = 17;
-    this.gravity = 0.7;
-    this.onGround = false;
-    this.controls = controls;
-    this.checkpoint = { x, y };
-    this.collected = 0;
-    this.dead = false;
+    this.width = 40;
+    this.height = 50;
+    this.color = 'tomato';
+
+    this.velX = 0;
+    this.velY = 0;
+    this.speed = 4;
+    this.jumpStrength = 12;
+    this.gravity = 0.6;
+    this.grounded = false;
   }
 
-  get rect() {
-    return { x: this.x, y: this.y, width: this.width, height: this.height };
-  }
-
-  respawn() {
-    this.x = this.checkpoint.x;
-    this.y = this.checkpoint.y;
-    this.vx = 0;
-    this.vy = 0;
-    this.dead = false;
-  }
-
-  update(platforms, hazards, collectibles, checkpoints) {
-    // Handle input
-    let move = 0;
-    if (keys[this.controls.left]) move -= 1;
-    if (keys[this.controls.right]) move += 1;
-    this.vx = move * this.speed;
+  update(keys, floorY) {
+    // Horizontal movement
+    if (keys['ArrowLeft']) this.velX = -this.speed;
+    else if (keys['ArrowRight']) this.velX = this.speed;
+    else this.velX = 0;
 
     // Jump
-    if (this.onGround && keys[this.controls.jump]) {
-      this.vy = this.jumpVelocity;
-      this.onGround = false;
+    if (keys['Space'] && this.grounded) {
+      this.velY = -this.jumpStrength;
+      this.grounded = false;
     }
 
-    // Gravity
-    this.vy += this.gravity;
-    if (this.vy > this.maxFall) this.vy = this.maxFall;
+    // Apply gravity
+    this.velY += this.gravity;
 
-    // Horizontal movement
-    this.x += this.vx;
-    for (const plat of platforms) {
-      if (rectsCollide(this.rect, plat)) {
-        if (this.vx > 0) this.x = plat.x - this.width;
-        else if (this.vx < 0) this.x = plat.x + plat.width;
-      }
-    }
+    // Update position
+    this.x += this.velX;
+    this.y += this.velY;
 
-    // Vertical movement
-    this.y += this.vy;
-    this.onGround = false;
-    for (const plat of platforms) {
-      if (rectsCollide(this.rect, plat)) {
-        if (this.vy > 0) {
-          this.y = plat.y - this.height;
-          this.vy = 0;
-          this.onGround = true;
-        } else if (this.vy < 0) {
-          this.y = plat.y + plat.height;
-          this.vy = 0;
-        }
-      }
-    }
-
-    // World bounds
-    this.x = clamp(this.x, 0, WORLD_WIDTH - this.width);
-    if (this.y > WORLD_HEIGHT) {
-      this.dead = true;
-    }
-
-    // Hazards
-    for (const hazard of hazards) {
-      if (rectsCollide(this.rect, hazard)) {
-        this.dead = true;
-      }
-    }
-
-    // Collectibles
-    for (let i = collectibles.length - 1; i >= 0; i--) {
-      if (rectsCollide(this.rect, collectibles[i])) {
-        collectibles.splice(i, 1);
-        this.collected += 1;
-      }
-    }
-
-    // Checkpoints
-    for (const cp of checkpoints) {
-      if (rectsCollide(this.rect, cp)) {
-        this.checkpoint = { x: cp.x, y: cp.y };
-      }
+    // Floor collision
+    if (this.y + this.height >= floorY) {
+      this.y = floorY - this.height;
+      this.velY = 0;
+      this.grounded = true;
     }
   }
 
   draw(ctx) {
-    ctx.save();
     ctx.fillStyle = this.color;
     ctx.fillRect(this.x, this.y, this.width, this.height);
-
-    // Eyes
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(this.x+7, this.y+12, 8, 8);
-    ctx.fillRect(this.x+21, this.y+12, 8, 8);
-    ctx.fillStyle = "#444";
-    ctx.fillRect(this.x+10, this.y+16, 3, 3);
-    ctx.fillRect(this.x+24, this.y+16, 3, 3);
-
-    ctx.restore();
   }
 }
-</script>
-</body>
-</html>
-
-
