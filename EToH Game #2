@@ -250,3 +250,200 @@
 </body>
 </html>
 
+(Tower)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Players Module</title>
+</head>
+<body>
+<script>
+// ==== INPUT HANDLING ====
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ==== PLAYER CLASS ====
+class Player {
+  constructor(x, y, color, controls) {
+    this.x = x;
+    this.y = y;
+    this.width = 36;
+    this.height = 48;
+    this.color = color;
+    this.vx = 0;
+    this.vy = 0;
+    this.speed = 5.2;
+    this.jumpVelocity = -13.7;
+    this.maxFall = 17;
+    this.gravity = 0.7;
+    this.onGround = false;
+    this.controls = controls;
+    this.checkpoint = { x, y };
+    this.collected = 0;
+    this.dead = false;
+  }
+
+  get rect() {
+    return { x: this.x, y: this.y, width: this.width, height: this.height };
+  }
+
+  respawn() {
+    this.x = this.checkpoint.x;
+    this.y = this.checkpoint.y;
+    this.vx = 0;
+    this.vy = 0;
+    this.dead = false;
+  }
+
+  update(platforms, hazards, collectibles, checkpoints) {
+    // Handle input
+    let move = 0;
+    if (keys[this.controls.left]) move -= 1;
+    if (keys[this.controls.right]) move += 1;
+    this.vx = move * this.speed;
+
+    // Jump
+    if (this.onGround && keys[this.controls.jump]) {
+      this.vy = this.jumpVelocity;
+      this.onGround = false;
+    }
+
+    // Gravity
+    this.vy += this.gravity;
+    if (this.vy > this.maxFall) this.vy = this.maxFall;
+
+    // Horizontal movement
+    this.x += this.vx;
+    for (const plat of platforms) {
+      if (rectsCollide(this.rect, plat)) {
+        if (this.vx > 0) this.x = plat.x - this.width;
+        else if (this.vx < 0) this.x = plat.x + plat.width;
+      }
+    }
+
+    // Vertical movement
+    this.y += this.vy;
+    this.onGround = false;
+    for (const plat of platforms) {
+      if (rectsCollide(this.rect, plat)) {
+        if (this.vy > 0) {
+          this.y = plat.y - this.height;
+          this.vy = 0;
+          this.onGround = true;
+        } else if (this.vy < 0) {
+          this.y = plat.y + plat.height;
+          this.vy = 0;
+        }
+      }
+    }
+
+    // World bounds
+    this.x = clamp(this.x, 0, WORLD_WIDTH - this.width);
+    if (this.y > WORLD_HEIGHT) {
+      this.dead = true;
+    }
+
+    // Hazards
+    for (const hazard of hazards) {
+      if (rectsCollide(this.rect, hazard)) {
+        this.dead = true;
+      }
+    }
+
+    // Collectibles
+    for (let i = collectibles.length - 1; i >= 0; i--) {
+      if (rectsCollide(this.rect, collectibles[i])) {
+        collectibles.splice(i, 1);
+        this.collected += 1;
+      }
+    }
+
+    // Checkpoints
+    for (const cp of checkpoints) {
+      if (rectsCollide(this.rect, cp)) {
+        this.checkpoint = { x: cp.x, y: cp.y };
+      }
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x, this.y, this.width, this.height);
+
+    // Eyes
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(this.x+7, this.y+12, 8, 8);
+    ctx.fillRect(this.x+21, this.y+12, 8, 8);
+    ctx.fillStyle = "#444";
+    ctx.fillRect(this.x+10, this.y+16, 3, 3);
+    ctx.fillRect(this.x+24, this.y+16, 3, 3);
+
+    ctx.restore();
+  }
+}
+</script>
+</body>
+</html>
+
+(Players)
