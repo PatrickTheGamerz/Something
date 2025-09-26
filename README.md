@@ -2,125 +2,108 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Tower Platformer</title>
+  <title>Tower Layout</title>
   <style>
-    canvas {
-      background: #222;
-      display: block;
-      margin: 0 auto;
-    }
+    body { background: #223; margin: 0; overflow: hidden; }
+    #towerCanvas { background: #444; display: block; margin: 0 auto; }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="800" height="600"></canvas>
-  
-  <!-- Import Player logic -->
-  <script type="module">
-    import { Player } from './Player.js';
+<canvas id="towerCanvas" width="1024" height="480"></canvas>
+<script>
+// ==== MAP/LAYOUT DEFINITION ====
 
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+// Platforms (ground, steps, walls, tower structure)
+const platforms = [
+  { x: 0, y: 450, width: 2000, height: 50 },
+  { x: 100, y: 370, width: 250, height: 20 },
+  { x: 270, y: 300, width: 120, height: 16 },
+  { x: 400, y: 250, width: 130, height: 16 },
+  { x: 650, y: 320, width: 140, height: 18 },
+  { x: 900, y: 390, width: 80, height: 18 },
+  { x: 1100, y: 340, width: 150, height: 16 },
+  { x: 1400, y: 290, width: 120, height: 18 },
+  { x: 1500, y: 220, width: 100, height: 16 },
+  { x: 650, y: 220, width: 18, height: 100 },
+  { x: 1680, y: 100, width: 170, height: 18 },
+];
 
-    // Simple level floor
-    const floorY = 550;
+// Hazards (spikes, traps)
+const hazards = [
+  { x: 500, y: 465, width: 36, height: 15 },
+  { x: 1190, y: 465, width: 36, height: 15 },
+  { x: 1520, y: 465, width: 40, height: 15 },
+];
 
-    // Create player
-    const player = new Player(100, floorY - 50);
+// Collectibles (coins, gems, etc.)
+const collectibles = [
+  { x: 170, y: 340, width: 20, height: 20 },
+  { x: 450, y: 225, width: 20, height: 20 },
+  { x: 680, y: 297, width: 20, height: 20 },
+  { x: 1450, y: 267, width: 20, height: 20 },
+  { x: 1710, y: 75, width: 20, height: 20 },
+];
 
-    // Input handling
-    const keys = {};
-    window.addEventListener('keydown', e => keys[e.code] = true);
-    window.addEventListener('keyup', e => keys[e.code] = false);
+// Checkpoints (respawn flags)
+const checkpoints = [
+  { x: 330, y: 325, width: 24, height: 28 },
+  { x: 1120, y: 308, width: 24, height: 28 },
+  { x: 1515, y: 186, width: 24, height: 28 },
+];
 
-    function gameLoop() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+// ==== DRAW HELPERS ====
+function drawPlatform(ctx, p) {
+  ctx.fillStyle = "#666";
+  ctx.fillRect(p.x, p.y, p.width, p.height);
+  ctx.strokeStyle = "#333";
+  ctx.strokeRect(p.x, p.y, p.width, p.height);
+}
 
-      // Update player
-      player.update(keys, floorY);
+function drawHazard(ctx, h) {
+  ctx.fillStyle = "#b43a3a";
+  ctx.fillRect(h.x, h.y, h.width, h.height);
+  ctx.strokeStyle = "#fff";
+  ctx.beginPath();
+  ctx.moveTo(h.x, h.y + h.height);
+  ctx.lineTo(h.x + h.width/2, h.y);
+  ctx.lineTo(h.x + h.width, h.y + h.height);
+  ctx.stroke();
+}
 
-      // Draw floor
-      ctx.fillStyle = '#444';
-      ctx.fillRect(0, floorY, canvas.width, canvas.height - floorY);
+function drawCollectible(ctx, c) {
+  ctx.beginPath();
+  ctx.arc(c.x+c.width/2, c.y+c.height/2, 9, 0, 2*Math.PI);
+  ctx.fillStyle = "#eeca3a";
+  ctx.fill();
+  ctx.strokeStyle = "#e5cc77";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
 
-      // Draw player
-      player.draw(ctx);
+function drawCheckpoint(ctx, cp) {
+  ctx.fillStyle = "#4ab3ed";
+  ctx.fillRect(cp.x, cp.y, cp.width, cp.height);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 11px sans-serif";
+  ctx.fillText("✔", cp.x+5, cp.y+18);
+}
 
-      requestAnimationFrame(gameLoop);
-    }
+// ==== RENDER LOOP ====
+const canvas = document.getElementById("towerCanvas");
+const ctx = canvas.getContext("2d");
 
-    gameLoop();
-  </script>
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (const plat of platforms) drawPlatform(ctx, plat);
+  for (const hazard of hazards) drawHazard(ctx, hazard);
+  for (const c of collectibles) drawCollectible(ctx, c);
+  for (const cp of checkpoints) drawCheckpoint(ctx, cp);
+
+  requestAnimationFrame(render);
+}
+
+render();
+</script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<script>
-class Player {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.width = 40;
-    this.height = 50;
-    this.color = 'tomato';
-
-    this.velX = 0;
-    this.velY = 0;
-    this.speed = 4;
-    this.jumpStrength = 12;
-    this.gravity = 0.6;
-    this.grounded = false;
-  }
-
-  update(keys, floorY) {
-    if (keys['ArrowLeft']) this.velX = -this.speed;
-    else if (keys['ArrowRight']) this.velX = this.speed;
-    else this.velX = 0;
-
-    if (keys['Space'] && this.grounded) {
-      this.velY = -this.jumpStrength;
-      this.grounded = false;
-    }
-
-    this.velY += this.gravity;
-
-    this.x += this.velX;
-    this.y += this.velY;
-
-    if (this.y + this.height >= floorY) {
-      this.y = floorY - this.height;
-      this.velY = 0;
-      this.grounded = true;
-    }
-  }
-
-  draw(ctx) {
-    ctx.fillStyle = this.color;
-    ctx.fillRect(this.x, this.y, this.width, this.height);
-  }
-}
-</script>
-
