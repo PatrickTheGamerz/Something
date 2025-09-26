@@ -53,13 +53,16 @@ const checkpoints = [
 
 // ==== DRAW HELPERS ====
 function drawPlatform(ctx, p) {
+  ctx.save();
   ctx.fillStyle = "#666";
   ctx.fillRect(p.x, p.y, p.width, p.height);
   ctx.strokeStyle = "#333";
   ctx.strokeRect(p.x, p.y, p.width, p.height);
+  ctx.restore();
 }
 
 function drawHazard(ctx, h) {
+  ctx.save();
   ctx.fillStyle = "#b43a3a";
   ctx.fillRect(h.x, h.y, h.width, h.height);
   ctx.strokeStyle = "#fff";
@@ -67,25 +70,32 @@ function drawHazard(ctx, h) {
   ctx.moveTo(h.x, h.y + h.height);
   ctx.lineTo(h.x + h.width/2, h.y);
   ctx.lineTo(h.x + h.width, h.y + h.height);
+  ctx.closePath();
   ctx.stroke();
+  ctx.restore();
 }
 
 function drawCollectible(ctx, c) {
+  ctx.save();
   ctx.beginPath();
-  ctx.arc(c.x+c.width/2, c.y+c.height/2, 9, 0, 2*Math.PI);
+  ctx.arc(c.x + c.width/2, c.y + c.height/2, 9, 0, 2 * Math.PI);
   ctx.fillStyle = "#eeca3a";
   ctx.fill();
   ctx.strokeStyle = "#e5cc77";
   ctx.lineWidth = 2;
   ctx.stroke();
+  ctx.restore();
 }
 
 function drawCheckpoint(ctx, cp) {
+  ctx.save();
   ctx.fillStyle = "#4ab3ed";
   ctx.fillRect(cp.x, cp.y, cp.width, cp.height);
   ctx.fillStyle = "#fff";
   ctx.font = "bold 11px sans-serif";
-  ctx.fillText("✔", cp.x+5, cp.y+18);
+  ctx.textBaseline = "top";
+  ctx.fillText("✔", cp.x + 5, cp.y + 5);
+  ctx.restore();
 }
 
 // ==== RENDER LOOP ====
@@ -107,6 +117,7 @@ render();
 </script>
 </body>
 </html>
+
 
 
 
