@@ -342,3 +342,6 @@
       // You can reuse the collision logic from earlier in the script
       // including solid platforms, thin platforms, hazards, molecules, and checkpoint logic
     });
+</script> 
+</body> 
+</html>
