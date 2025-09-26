@@ -78,7 +78,8 @@
 
 
 
-export class Player {
+<script>
+class Player {
   constructor(x, y) {
     this.x = x;
     this.y = y;
@@ -95,25 +96,20 @@ export class Player {
   }
 
   update(keys, floorY) {
-    // Horizontal movement
     if (keys['ArrowLeft']) this.velX = -this.speed;
     else if (keys['ArrowRight']) this.velX = this.speed;
     else this.velX = 0;
 
-    // Jump
     if (keys['Space'] && this.grounded) {
       this.velY = -this.jumpStrength;
       this.grounded = false;
     }
 
-    // Apply gravity
     this.velY += this.gravity;
 
-    // Update position
     this.x += this.velX;
     this.y += this.velY;
 
-    // Floor collision
     if (this.y + this.height >= floorY) {
       this.y = floorY - this.height;
       this.velY = 0;
@@ -126,3 +122,5 @@ export class Player {
     ctx.fillRect(this.x, this.y, this.width, this.height);
   }
 }
+</script>
+
