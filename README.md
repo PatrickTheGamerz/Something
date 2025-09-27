@@ -16,22 +16,43 @@
       --danger: #c63e3e;
       --ok: #27c39f;
       --mc-size: 84px; /* mobile control default size */
+
+      /* Responsive tuning variables */
+      --canvas-scale: 1;
+      --canvas-shift-x: 0px;
+      --ui-scale: 1;
+      --menu-scale: 1;
+      --menu-offset-x: 0px;
+      --toolbar-scale: 1;
+      --hint-scale: 1;
+      --font-scale: 1;
+      --btn-scale: 1;
+      --panel-width: 860px;
     }
     html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; overflow:hidden; }
-    canvas { display:block; margin:0 auto; background:var(--canvas); transition: transform 0.2s ease; transform-origin: center top; }
+    canvas {
+      display:block; margin:0 auto; background:var(--canvas);
+      transition: transform 0.2s ease;
+      transform-origin: center top;
+      transform: translateX(var(--canvas-shift-x)) scale(var(--canvas-scale));
+    }
 
     /* UI layers */
     .ui-layer { position:fixed; inset:0; display:grid; place-items:center; pointer-events:none; }
     .panel {
       pointer-events:auto; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px;
-      width:860px; max-width:calc(100% - 40px); box-shadow:0 20px 60px rgba(0,0,0,0.45);
+      width:var(--panel-width); max-width:calc(100% - 40px); box-shadow:0 20px 60px rgba(0,0,0,0.45);
       max-height: 80vh; overflow-y: auto; /* scrolling */
+      transform: scale(var(--menu-scale));
+      transform-origin: top left;
+      margin-left: var(--menu-offset-x);
     }
-    .panel h1 { margin:0 0 8px 0; }
-    .row { display:flex; gap:12px; align-items:center; margin:12px 0; flex-wrap: wrap; }
+    .panel h1 { margin:0 0 8px 0; transform: scale(var(--font-scale)); transform-origin: left top; }
+    .row { display:flex; gap:12px; align-items:center; margin:12px 0; flex-wrap: wrap; transform: scale(var(--ui-scale)); transform-origin: left top; }
     .btn {
       background:#222637; border:1px solid var(--border); color:var(--text);
       border-radius:10px; padding:12px 14px; font-weight:600; cursor:pointer;
+      transform: scale(var(--btn-scale)); transform-origin: left top;
     }
     .btn:hover { background:#2a3147; }
     .btn.primary { background:linear-gradient(180deg,#2a91c7,#1f78aa); border-color:#2a91c7; }
@@ -40,19 +61,25 @@
     .segmented { display:flex; gap:8px; flex-wrap:wrap; }
     .seg { background:#222637; border:1px solid var(--border); color:var(--text); padding:10px 12px; border-radius:8px; cursor:pointer; }
     .seg.active { background:#2a3147; border-color:#3b4767; }
+    .segmented.disabled .seg { opacity: 0.5; pointer-events: none; }
     .sub { margin-top:14px; padding-top:14px; border-top:1px solid #252a3a; }
-    .help { color:var(--muted); font-size:13px; }
+    .help { color:var(--muted); font-size:13px; transform: scale(var(--font-scale)); transform-origin: left top; }
 
     /* Editor toolbar */
     .toolbar {
       position:fixed; left:16px; top:16px; display:flex; gap:8px; background:#141725cc; border:1px solid #242a3c;
       border-radius:10px; padding:8px; z-index:10; backdrop-filter: blur(4px);
+      transform: scale(var(--toolbar-scale));
+      transform-origin: left top;
+      margin-left: var(--menu-offset-x);
     }
     .tool { background:#222637; border:1px solid var(--border); color:#d7deea; padding:8px 12px; border-radius:8px; cursor:pointer; }
     .tool.active { background:#2a3147; border-color:#3b4767; }
     .hint {
       position:fixed; right:16px; top:16px; background:#141725cc; color:#cfe2ff; border:1px solid #242a3c;
       padding:8px 12px; border-radius:10px; backdrop-filter: blur(4px); pointer-events:none; z-index:10;
+      transform: scale(var(--hint-scale));
+      transform-origin: right top;
     }
 
     /* Mobile controls */
@@ -65,6 +92,11 @@
       user-select:none;
     }
     .mc-btn:active { filter:brightness(1.2); }
+
+    /* Mobile-small layout nudges */
+    body.mobile-small .ui-layer { place-items: start; }
+    body.mobile-small .panel { margin-left: 12px; }
+    body.mobile-small .toolbar { left: 8px; }
   </style>
 </head>
 <body>
@@ -196,6 +228,17 @@ let currentSplitMode = "merged";
 let gridSnap = 20;
 let otherAlpha = 1.0; // transparency for other player/bot
 
+/* Mobile-small gameplay tuning */
+function getGameplayTuning() {
+  const mobileSmall = (deviceType === "mobile" && screenMode === "small");
+  return {
+    speedMult: mobileSmall ? 1.15 : 1.0,
+    jumpVelocity: mobileSmall ? -15.5 : -14.2,
+    botReachX: mobileSmall ? { normal: 160, tryhard: 200, master: 220 } : { normal: 140, tryhard: 180, master: 200 },
+    botReachY: mobileSmall ? { normal: 120, tryhard: 140, master: 160 } : { normal: 110, tryhard: 130, master: 150 }
+  };
+}
+
 /* ==== INPUT ==== */
 const keys = {};
 window.addEventListener("keydown", e => keys[e.code] = true);
@@ -221,6 +264,8 @@ function segmentedInit(segEl, value, attr, onChange) {
       ch.classList.add("active");
       onChange(ch.getAttribute(attr));
       syncMobileControls();
+      // Re-apply screen scale after any relevant change
+      applyScreenScale();
     });
   });
 }
@@ -232,7 +277,19 @@ const botDiffSeg = document.getElementById("botDiffSeg");
 const botDiffRow = document.getElementById("botDiffRow");
 const towerSeg = document.getElementById("towerSeg");
 
-segmentedInit(deviceSeg, deviceType, "data-device", v => deviceType = v);
+segmentedInit(deviceSeg, deviceType, "data-device", v => {
+  deviceType = v;
+  // Control overlay only available on mobile
+  const overlayContainer = document.getElementById("overlaySeg");
+  if (deviceType === "mobile") {
+    overlayContainer.classList.remove("disabled");
+  } else {
+    overlayEnabled = false;
+    [...overlayContainer.children].forEach(n => n.classList.remove("active"));
+    overlayContainer.querySelector('[data-overlay="off"]').classList.add("active");
+    overlayContainer.classList.add("disabled");
+  }
+});
 segmentedInit(overlaySeg, overlayEnabled ? "on" : "off", "data-overlay", v => overlayEnabled = (v === "on"));
 segmentedInit(screenSeg, screenMode, "data-screen", v => { screenMode = v; applyScreenScale(); });
 segmentedInit(playModeSeg, playMode, "data-playmode", v => { playMode = v; botDiffRow.style.display = (playMode === "bot") ? "flex" : "none"; });
@@ -289,14 +346,52 @@ bindPress(document.getElementById("mcP2Jump"), ["ArrowUp"]);
 function syncMobileControls() {
   mcLayer.style.display = (deviceType === "mobile" && overlayEnabled && mode !== "menu") ? "block" : "none";
 }
+
+/* Enhanced screen scaling logic per device and mode */
 function applyScreenScale() {
-  const canvas = document.getElementById("gameCanvas");
-  if (screenMode === "small") {
-    canvas.style.transform = "scale(0.85)";
-    document.documentElement.style.setProperty("--mc-size", "64px");
-  } else {
-    canvas.style.transform = "scale(1)";
-    document.documentElement.style.setProperty("--mc-size", "84px");
+  const root = document.documentElement;
+  const body = document.body;
+  const mobile = (deviceType === "mobile");
+  const small = (screenMode === "small");
+
+  // Defaults
+  root.style.setProperty("--canvas-scale", mobile ? 1 : 1);
+  root.style.setProperty("--mc-size", mobile ? "84px" : "84px");
+  root.style.setProperty("--canvas-shift-x", "0px");
+  root.style.setProperty("--ui-scale", "1");
+  root.style.setProperty("--menu-scale", "1");
+  root.style.setProperty("--toolbar-scale", "1");
+  root.style.setProperty("--hint-scale", "1");
+  root.style.setProperty("--font-scale", "1");
+  root.style.setProperty("--btn-scale", "1");
+  root.style.setProperty("--panel-width", "860px");
+  root.style.setProperty("--menu-offset-x", "0px");
+  body.classList.remove("mobile-small");
+
+  if (!mobile && small) {
+    // PC smaller: same as before
+    root.style.setProperty("--canvas-scale", "0.85");
+    root.style.setProperty("--mc-size", "84px");
+  } else if (mobile && !small) {
+    // Mobile normal
+    root.style.setProperty("--canvas-scale", "1");
+    root.style.setProperty("--mc-size", "84px");
+    root.style.setProperty("--ui-scale", "0.95");
+    root.style.setProperty("--panel-width", "820px");
+  } else if (mobile && small) {
+    // Mobile smaller: aggressive scaling + UI compaction + left shift + gameplay tuning handled elsewhere
+    body.classList.add("mobile-small");
+    root.style.setProperty("--canvas-scale", "0.70");
+    root.style.setProperty("--mc-size", "52px");
+    root.style.setProperty("--ui-scale", "0.80");
+    root.style.setProperty("--menu-scale", "0.86");
+    root.style.setProperty("--toolbar-scale", "0.85");
+    root.style.setProperty("--hint-scale", "0.85");
+    root.style.setProperty("--font-scale", "0.90");
+    root.style.setProperty("--btn-scale", "0.90");
+    root.style.setProperty("--panel-width", "760px");
+    root.style.setProperty("--menu-offset-x", "-20px");
+    root.style.setProperty("--canvas-shift-x", "-120px"); // push gameplay left for better reachability
   }
 }
 
@@ -312,7 +407,7 @@ class Player {
   constructor(x, y, color, controls) {
     this.x = x; this.y = y; this.width = 36; this.height = 48;
     this.color = color; this.vx = 0; this.vy = 0;
-    this.speed = 5.2; this.jumpVelocity = -14.2; this.gravity = 0.8; this.maxFall = 18;
+    this.baseSpeed = 5.2; this.baseJumpVelocity = -14.2; this.gravity = 0.8; this.maxFall = 18;
     this.onGround = false; this.controls = controls; this.dead = false;
     this.isBot = false;
     this.lastSafe = { x, y }; // for backtracking
@@ -320,14 +415,18 @@ class Player {
   }
   get rect() { return { x: this.x, y: this.y, width: this.width, height: this.height }; }
   update(platforms, hazards) {
-    if (this.isBot) this.botLogic(platforms, hazards);
+    const tune = getGameplayTuning();
+    const speed = this.baseSpeed * tune.speedMult;
+    const jumpV = tune.jumpVelocity; // replaces base when jumping
+
+    if (this.isBot) this.botLogic(platforms, hazards, tune);
     else {
       let move = 0;
       if (keys[this.controls.left]) move -= 1;
       if (keys[this.controls.right]) move += 1;
-      this.vx = move * this.speed;
+      this.vx = move * speed;
       if (this.onGround && keys[this.controls.jump]) {
-        this.vy = this.jumpVelocity; this.onGround = false;
+        this.vy = jumpV; this.onGround = false;
       }
     }
     this.vy += this.gravity;
@@ -367,7 +466,7 @@ class Player {
     if (Math.abs(this.vx) > 0.1 && Math.abs(this.y - prevY) < 0.01 && !this.onGround) this.stuckTimer++;
     else this.stuckTimer = 0;
   }
-  botLogic(platforms, hazards) {
+  botLogic(platforms, hazards, tune) {
     // Heuristic pathing bot: can move left/right, avoid lava, backtrack if stuck/fallen.
     const cfg = {
       speedScale: (botDifficulty === "normal" ? 0.95 : botDifficulty === "tryhard" ? 1.15 : 1.3),
@@ -399,8 +498,11 @@ class Player {
     const nearEdge = ground ? ((dir > 0 && aheadX > ground.x + ground.width - 10) || (dir < 0 && aheadX < ground.x + 10)) : true;
 
     // Find candidate platform within jump window (both left and right)
-    const jumpReachX = cfg.perfectTiming ? 180 : 140;
-    const jumpReachY = cfg.perfectTiming ? 130 : 110;
+    const reachXMap = tune.botReachX;
+    const reachYMap = tune.botReachY;
+    const jumpReachX = reachXMap[botDifficulty];
+    const jumpReachY = reachYMap[botDifficulty];
+
     let candidate = null;
     for (const p of platforms) {
       const withinX = (dir > 0)
@@ -412,34 +514,35 @@ class Player {
     }
 
     // Decide movement
-    this.vx = dir * this.speed * cfg.speedScale;
+    this.vx = dir * (this.baseSpeed * tune.speedMult) * cfg.speedScale;
 
     // Perfect edge-timed jumps (master) or heuristic jumps
     const needJump = nearEdge || hazardAhead || !!candidate;
     const randomJump = Math.random() < cfg.jumpBias;
     const shouldJump = this.onGround && (needJump || randomJump);
 
-    // Master timing: jump exactly at platform edge or just before hazard
     if (cfg.perfectTiming && this.onGround) {
       const edgeThreshold = 6;
-      const atEdge = ground && ((dir > 0 && (ground.x + ground.width - (this.x + this.width)) < edgeThreshold) ||
-                                (dir < 0 && (this.x - ground.x) < edgeThreshold));
+      const atEdge = ground && (
+        (dir > 0 && (ground.x + ground.width - (this.x + this.width)) < edgeThreshold) ||
+        (dir < 0 && (this.x - ground.x) < edgeThreshold)
+      );
       const hazardClose = hazards.some(h => {
         const ahead = dir > 0 ? (h.x - (this.x + this.width)) : ((this.x) - (h.x + h.width));
         const sameLevel = Math.abs((h.y) - (this.y + this.height)) < 16;
         return ahead > 0 && ahead < 24 && sameLevel;
       });
       if (atEdge || hazardClose || candidate) {
-        this.vy = this.jumpVelocity; this.onGround = false;
+        this.vy = tune.jumpVelocity; this.onGround = false;
       }
     } else if (shouldJump) {
-      this.vy = this.jumpVelocity; this.onGround = false;
+      this.vy = tune.jumpVelocity; this.onGround = false;
     }
 
     // Backtrack if stuck (e.g., sliding under platform lip)
     if (this.stuckTimer > 20 && this.onGround) {
-      dir = -dir; this.vx = dir * this.speed * (cfg.speedScale * 0.8);
-      if (Math.random() < 0.5) { this.vy = this.jumpVelocity; this.onGround = false; }
+      dir = -dir; this.vx = dir * (this.baseSpeed * tune.speedMult) * (cfg.speedScale * 0.8);
+      if (Math.random() < 0.5) { this.vy = tune.jumpVelocity; this.onGround = false; }
       this.stuckTimer = 0;
     }
   }
@@ -916,6 +1019,11 @@ function gameLoop() {
 /* ==== STARTUP ==== */
 setDefaultLevel();
 menuLayer.style.display = "grid";
+
+/* Initialize overlay control availability based on default device (PC) */
+document.getElementById("overlaySeg").classList.add("disabled");
+overlayEnabled = false;
+
 syncMobileControls();
 applyScreenScale();
 resetPlayersToSpawn();
