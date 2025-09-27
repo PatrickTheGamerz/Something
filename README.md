@@ -29,7 +29,12 @@
       --btn-scale: 1;
       --panel-width: 860px;
     }
-    html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; overflow:hidden; }
+    html, body {
+      margin:0; height:100%;
+      background:var(--bg); color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      overflow:hidden;
+    }
     canvas {
       display:block; margin:0 auto; background:var(--canvas);
       transition: transform 0.2s ease;
@@ -203,6 +208,8 @@
   <div class="mc-btn" id="mcP2Left" style="right: calc(26px + var(--mc-size) + 16px); bottom: 28px;">◀</div>
   <div class="mc-btn" id="mcP2Right" style="right: 26px; bottom: 28px;">▶</div>
   <div class="mc-btn" id="mcP2Jump" style="right: calc(26px + var(--mc-size)/2 + 8px); bottom: calc(28px + var(--mc-size) + 18px);">⤒</div>
+  <!-- Create-only down button -->
+  <div class="mc-btn" id="mcCreateDown" style="left: calc(26px + var(--mc-size)*2 + 48px); bottom: 28px; display:none;">▼</div>
 </div>
 
 <script>
@@ -232,10 +239,10 @@ let otherAlpha = 1.0; // transparency for other player/bot
 function getGameplayTuning() {
   const mobileSmall = (deviceType === "mobile" && screenMode === "small");
   return {
-    speedMult: mobileSmall ? 1.15 : 1.0,
-    jumpVelocity: mobileSmall ? -15.5 : -14.2,
-    botReachX: mobileSmall ? { normal: 160, tryhard: 200, master: 220 } : { normal: 140, tryhard: 180, master: 200 },
-    botReachY: mobileSmall ? { normal: 120, tryhard: 140, master: 160 } : { normal: 110, tryhard: 130, master: 150 }
+    speedMult: mobileSmall ? 1.18 : 1.0,
+    jumpVelocity: mobileSmall ? -15.8 : -14.2,
+    botReachX: mobileSmall ? { normal: 170, tryhard: 210, master: 230 } : { normal: 140, tryhard: 180, master: 200 },
+    botReachY: mobileSmall ? { normal: 130, tryhard: 150, master: 170 } : { normal: 110, tryhard: 130, master: 150 }
   };
 }
 
@@ -264,7 +271,6 @@ function segmentedInit(segEl, value, attr, onChange) {
       ch.classList.add("active");
       onChange(ch.getAttribute(attr));
       syncMobileControls();
-      // Re-apply screen scale after any relevant change
       applyScreenScale();
     });
   });
@@ -342,9 +348,15 @@ bindPress(document.getElementById("mcP1Jump"), ["KeyW"]);
 bindPress(document.getElementById("mcP2Left"), ["ArrowLeft"]);
 bindPress(document.getElementById("mcP2Right"), ["ArrowRight"]);
 bindPress(document.getElementById("mcP2Jump"), ["ArrowUp"]);
+bindPress(document.getElementById("mcCreateDown"), ["KeyS"]); // create-only down
 
 function syncMobileControls() {
-  mcLayer.style.display = (deviceType === "mobile" && overlayEnabled && mode !== "menu") ? "block" : "none";
+  const isMobile = (deviceType === "mobile");
+  const showLayer = (isMobile && overlayEnabled && mode !== "menu");
+  mcLayer.style.display = showLayer ? "block" : "none";
+  // Create-only down button visibility
+  const downBtn = document.getElementById("mcCreateDown");
+  downBtn.style.display = (showLayer && mode === "create") ? "block" : "none";
 }
 
 /* Enhanced screen scaling logic per device and mode */
@@ -355,8 +367,8 @@ function applyScreenScale() {
   const small = (screenMode === "small");
 
   // Defaults
-  root.style.setProperty("--canvas-scale", mobile ? 1 : 1);
-  root.style.setProperty("--mc-size", mobile ? "84px" : "84px");
+  root.style.setProperty("--canvas-scale", "1");
+  root.style.setProperty("--mc-size", "84px");
   root.style.setProperty("--canvas-shift-x", "0px");
   root.style.setProperty("--ui-scale", "1");
   root.style.setProperty("--menu-scale", "1");
@@ -375,23 +387,27 @@ function applyScreenScale() {
   } else if (mobile && !small) {
     // Mobile normal
     root.style.setProperty("--canvas-scale", "1");
-    root.style.setProperty("--mc-size", "84px");
+    root.style.setProperty("--mc-size", "78px");
     root.style.setProperty("--ui-scale", "0.95");
     root.style.setProperty("--panel-width", "820px");
+    root.style.setProperty("--menu-offset-x", "-10px");
+    root.style.setProperty("--canvas-shift-x", "-100px"); // nudge gameplay left
+    root.style.setProperty("--toolbar-scale", "0.90");
+    root.style.setProperty("--hint-scale", "0.92");
   } else if (mobile && small) {
-    // Mobile smaller: aggressive scaling + UI compaction + left shift + gameplay tuning handled elsewhere
+    // Mobile smaller: aggressive scaling + UI compaction + left shift
     body.classList.add("mobile-small");
-    root.style.setProperty("--canvas-scale", "0.70");
-    root.style.setProperty("--mc-size", "52px");
-    root.style.setProperty("--ui-scale", "0.80");
-    root.style.setProperty("--menu-scale", "0.86");
-    root.style.setProperty("--toolbar-scale", "0.85");
-    root.style.setProperty("--hint-scale", "0.85");
-    root.style.setProperty("--font-scale", "0.90");
-    root.style.setProperty("--btn-scale", "0.90");
-    root.style.setProperty("--panel-width", "760px");
-    root.style.setProperty("--menu-offset-x", "-20px");
-    root.style.setProperty("--canvas-shift-x", "-120px"); // push gameplay left for better reachability
+    root.style.setProperty("--canvas-scale", "0.66");
+    root.style.setProperty("--mc-size", "48px");
+    root.style.setProperty("--ui-scale", "0.78");
+    root.style.setProperty("--menu-scale", "0.82");
+    root.style.setProperty("--toolbar-scale", "0.75");
+    root.style.setProperty("--hint-scale", "0.80");
+    root.style.setProperty("--font-scale", "0.88");
+    root.style.setProperty("--btn-scale", "0.88");
+    root.style.setProperty("--panel-width", "740px");
+    root.style.setProperty("--menu-offset-x", "-32px");
+    root.style.setProperty("--canvas-shift-x", "-180px"); // push gameplay far left for better reachability
   }
 }
 
@@ -417,7 +433,7 @@ class Player {
   update(platforms, hazards) {
     const tune = getGameplayTuning();
     const speed = this.baseSpeed * tune.speedMult;
-    const jumpV = tune.jumpVelocity; // replaces base when jumping
+    const jumpV = tune.jumpVelocity;
 
     if (this.isBot) this.botLogic(platforms, hazards, tune);
     else {
@@ -467,7 +483,6 @@ class Player {
     else this.stuckTimer = 0;
   }
   botLogic(platforms, hazards, tune) {
-    // Heuristic pathing bot: can move left/right, avoid lava, backtrack if stuck/fallen.
     const cfg = {
       speedScale: (botDifficulty === "normal" ? 0.95 : botDifficulty === "tryhard" ? 1.15 : 1.3),
       jumpBias: (botDifficulty === "normal" ? 0.02 : botDifficulty === "tryhard" ? 0.06 : 0.12),
@@ -475,7 +490,7 @@ class Player {
     };
     const goalX = finishPad.x + finishPad.width / 2;
     const dx = goalX - (this.x + this.width / 2);
-    let dir = Math.sign(dx); // towards goal
+    let dir = Math.sign(dx);
 
     // Sense ground under feet
     const feetY = this.y + this.height + 2;
@@ -497,7 +512,7 @@ class Player {
     const hazardAhead = hazards.some(h => rectsCollide(frontRect, h));
     const nearEdge = ground ? ((dir > 0 && aheadX > ground.x + ground.width - 10) || (dir < 0 && aheadX < ground.x + 10)) : true;
 
-    // Find candidate platform within jump window (both left and right)
+    // Jump window influenced by mobile small tuning
     const reachXMap = tune.botReachX;
     const reachYMap = tune.botReachY;
     const jumpReachX = reachXMap[botDifficulty];
@@ -513,10 +528,8 @@ class Player {
       if (withinX && aboveOrLevel && withinY) { candidate = p; break; }
     }
 
-    // Decide movement
     this.vx = dir * (this.baseSpeed * tune.speedMult) * cfg.speedScale;
 
-    // Perfect edge-timed jumps (master) or heuristic jumps
     const needJump = nearEdge || hazardAhead || !!candidate;
     const randomJump = Math.random() < cfg.jumpBias;
     const shouldJump = this.onGround && (needJump || randomJump);
@@ -539,7 +552,6 @@ class Player {
       this.vy = tune.jumpVelocity; this.onGround = false;
     }
 
-    // Backtrack if stuck (e.g., sliding under platform lip)
     if (this.stuckTimer > 20 && this.onGround) {
       dir = -dir; this.vx = dir * (this.baseSpeed * tune.speedMult) * (cfg.speedScale * 0.8);
       if (Math.random() < 0.5) { this.vy = tune.jumpVelocity; this.onGround = false; }
@@ -791,12 +803,19 @@ function drawHud(player, x, y, label) {
   ctx.restore();
 }
 function drawPlayHUD() {
-  drawHud(player1, 28, 36, "P1");
-  if (mode === "play") {
-    const hx = currentSplitMode === "split" ? VIEW_WIDTH + 28 : 280;
-    const label = (playMode === "bot") ? ("BOT-" + botDifficulty.toUpperCase()) : "P2";
-    drawHud(player2, hx, 36, label);
+  const isMobile = (deviceType === "mobile");
+  const split = currentSplitMode === "split";
+  // Default positions
+  let p1x = 28, p1y = 36;
+  let p2x = split ? (VIEW_WIDTH + 28) : 280, p2y = 36;
+  const label2 = (playMode === "bot") ? ("BOT-" + botDifficulty.toUpperCase()) : "P2";
+  if (isMobile && split) {
+    // Vertical split: P2 top, P1 bottom
+    p2x = 28; p2y = 28;
+    p1x = 28; p1y = VIEW_HEIGHT - 52;
   }
+  drawHud(player1, p1x, p1y, "P1");
+  if (mode === "play") drawHud(player2, p2x, p2y, label2);
 }
 
 /* ==== EDITOR STATE & INPUT ==== */
@@ -857,6 +876,7 @@ function startCreateFresh() {
   spawnMarker = { ...defaultSpawn }; clampSpawnToFloor();
   finishPad = { ...defaultFinishPad };
   editorCamX = 0; editorCamY = 0;
+  applyScreenScale(); // ensure toolbar/hint scales for mobile
   syncMobileControls();
 }
 function screenToWorld(sx, sy) {
@@ -937,26 +957,53 @@ function drawPlaySplitOrMerged() {
   const p2Active = (playMode === "multiplayer" || playMode === "bot");
   currentSplitMode = p2Active ? getSplitMode(player1, player2) : "merged";
 
+  const isMobile = (deviceType === "mobile");
+
   if (p2Active && currentSplitMode === "split") {
-    // Left view (P1)
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, VIEW_WIDTH, VIEW_HEIGHT); ctx.clip();
-    let [cx1, cy1] = calcCamera(player1.x + player1.width / 2, player1.y + player1.height / 2);
-    ctx.translate(-cx1, -cy1);
-    drawWorld(ctx); player1.draw(ctx); player2.draw(ctx, otherAlpha);
-    ctx.restore();
+    if (isMobile) {
+      // Vertical split for mobile: P2 top, P1 bottom
+      // Top view (P2)
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, 0, CANVAS_WIDTH, VIEW_HEIGHT / 2); ctx.clip();
+      let [cx2, cy2] = calcCamera(player2.x + player2.width / 2, player2.y + player2.height / 2);
+      // shift Y so camera aligns to top half
+      ctx.translate(-cx2, -cy2);
+      drawWorld(ctx); player2.draw(ctx); player1.draw(ctx, otherAlpha);
+      ctx.restore();
 
-    // Divider
-    ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(VIEW_WIDTH, 0); ctx.lineTo(VIEW_WIDTH, VIEW_HEIGHT); ctx.stroke();
+      // Bottom view (P1)
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, VIEW_HEIGHT / 2, CANVAS_WIDTH, VIEW_HEIGHT / 2); ctx.clip();
+      let [cx1, cy1] = calcCamera(player1.x + player1.width / 2, player1.y + player1.height / 2);
+      ctx.translate(-cx1, -cy1 + VIEW_HEIGHT / 2); // move world down into bottom half
+      drawWorld(ctx); player1.draw(ctx); player2.draw(ctx, otherAlpha);
+      ctx.restore();
 
-    // Right view (P2)
-    ctx.save();
-    ctx.beginPath(); ctx.rect(VIEW_WIDTH, 0, VIEW_WIDTH, VIEW_HEIGHT); ctx.clip();
-    let [cx2, cy2] = calcCamera(player2.x + player2.width / 2, player2.y + player2.height / 2);
-    ctx.translate(-cx2 + VIEW_WIDTH, -cy2);
-    drawWorld(ctx); player2.draw(ctx, otherAlpha); player1.draw(ctx);
-    ctx.restore();
+      // Divider line horizontal
+      ctx.fillStyle = "#2a3147";
+      ctx.fillRect(0, VIEW_HEIGHT / 2 - 2, CANVAS_WIDTH, 4);
+    } else {
+      // Desktop: horizontal split (left/right)
+      // Left view (P1)
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, 0, VIEW_WIDTH, VIEW_HEIGHT); ctx.clip();
+      let [cx1, cy1] = calcCamera(player1.x + player1.width / 2, player1.y + player1.height / 2);
+      ctx.translate(-cx1, -cy1);
+      drawWorld(ctx); player1.draw(ctx); player2.draw(ctx, otherAlpha);
+      ctx.restore();
+
+      // Divider
+      ctx.strokeStyle = "#222"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(VIEW_WIDTH, 0); ctx.lineTo(VIEW_WIDTH, VIEW_HEIGHT); ctx.stroke();
+
+      // Right view (P2)
+      ctx.save();
+      ctx.beginPath(); ctx.rect(VIEW_WIDTH, 0, VIEW_WIDTH, VIEW_HEIGHT); ctx.clip();
+      let [cx2, cy2] = calcCamera(player2.x + player2.width / 2, player2.y + player2.height / 2);
+      ctx.translate(-cx2 + VIEW_WIDTH, -cy2);
+      drawWorld(ctx); player2.draw(ctx, otherAlpha); player1.draw(ctx);
+      ctx.restore();
+    }
   } else {
     // Single view (merged or single player)
     ctx.save();
